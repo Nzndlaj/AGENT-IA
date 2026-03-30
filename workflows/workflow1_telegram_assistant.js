@@ -1,32 +1,41 @@
 /**
  * Workflow 1: 🤖 AGENT-IA - Assistant Telegram Ultra-Avancé
- * ID: O7n0ipbQPNDp2A3s
- * URL: https://nz0439.app.n8n.cloud/workflow/O7n0ipbQPNDp2A3s
+ * ID: 5MlDBVpSGfYzm3UX
+ * URL: https://nz0439.app.n8n.cloud/workflow/5MlDBVpSGfYzm3UX
  *
  * Features:
  * - Telegram trigger (text, voice, image)
- * - Voice transcription via OpenAI Whisper
- * - Image analysis via GPT-4o Vision
- * - AI Agent with GPT-4o + Postgres Chat Memory
- * - Tools: Gmail read/send, Google Calendar, Contacts DB,
- *          News API, Image generation (DALL-E 3)
- * - PostgreSQL logging of all interactions
+ * - Voice: If node → OpenAI Whisper transcription → Set node
+ * - Photo/Text: Code node router (no nested ifElse)
+ * - GPT-4o AI Agent avec mémoire Postgres
+ * - Tools: Gmail (send+read), Google Calendar (read+create),
+ *          Postgres contacts, NewsAPI, DALL-E 3
+ *
+ * Variables d'environnement nécessaires:
+ * - NEWSAPI_KEY: clé API newsapi.org
+ *
+ * Credentials nécessaires:
+ * - Telegram API
+ * - OpenAI API
+ * - Gmail OAuth2
+ * - Google Calendar OAuth2
+ * - Postgres DB
+ * - OpenAI Bearer Auth (pour DALL-E)
  */
 
 const wf = workflow('🤖 AGENT-IA - Assistant Telegram Ultra-Avancé');
 
 const SYSTEM_PROMPT = `Tu es AGENT-IA, un assistant personnel ultra-avancé parlant français.
-Tu as accès à:
-- 📧 Gmail: lire et envoyer des emails
-- 📅 Google Calendar: gérer l'agenda
-- 👥 Base de données: contacts (noms, emails, téléphones)
-- 📰 Actualités: géopolitiques, économiques, financières
-- 🎨 Génération d'images: DALL-E 3
-- 📊 Données bancaires: transactions et comptes
+Tu as accès aux outils suivants:
+- Envoyer Email: envoie des emails via Gmail
+- Lire Emails: lit les emails Gmail
+- Voir Agenda: consulte Google Calendar
+- Créer Événement: ajoute un événement au calendrier
+- Chercher Contact: recherche dans la base de données
+- Actualités News: récupère les dernières nouvelles
+- Générer Image DALL-E: crée des images avec DALL-E 3
 
-Réponds TOUJOURS en français. Sois concis, précis et utile.
-Pour les images reçues, analyse-les en détail.
-Format tes réponses avec des émojis appropriés.`;
+Réponds TOUJOURS en français. Sois concis, précis et utile. Utilise des émojis.`;
 
 const tgTrigger = trigger({
   type: 'n8n-nodes-base.telegramTrigger',
@@ -34,19 +43,16 @@ const tgTrigger = trigger({
   name: 'Telegram Trigger',
   config: {
     updates: ['message', 'callback_query'],
-    additionalFields: {
-      download: true,
-      imageSize: 'large'
-    }
+    additionalFields: { download: true, imageSize: 'large' }
   },
   credentials: { telegramApi: newCredential('Telegram API') }
 });
 
-// === VOICE BRANCH ===
+// === BRANCHE VOIX: If → Whisper → Set → Agent ===
 const transcribeVoice = node({
   type: '@n8n/n8n-nodes-langchain.openAi',
   version: 2.1,
-  name: 'Transcribe Voice',
+  name: 'Transcrire Audio',
   config: {
     resource: 'audio',
     operation: 'transcribe',
@@ -59,7 +65,7 @@ const transcribeVoice = node({
 const setVoiceInput = node({
   type: 'n8n-nodes-base.set',
   version: 3.4,
-  name: 'Set Voice Input',
+  name: 'Données Vocale',
   config: {
     mode: 'manual',
     assignments: {
@@ -68,200 +74,128 @@ const setVoiceInput = node({
         { id: '2', name: 'inputType', value: 'voice', type: 'string' },
         { id: '3', name: 'chatId', value: expr("{{ $('Telegram Trigger').item.json.message.chat.id.toString() }}"), type: 'string' },
         { id: '4', name: 'userId', value: expr("{{ $('Telegram Trigger').item.json.message.from.id.toString() }}"), type: 'string' },
-        { id: '5', name: 'username', value: expr("{{ $('Telegram Trigger').item.json.message.from.first_name }}"), type: 'string' }
+        { id: '5', name: 'username', value: expr("{{ $('Telegram Trigger').item.json.message.from.first_name || 'User' }}"), type: 'string' }
       ]
     }
   }
 });
 
-// === PHOTO BRANCH ===
-const setPhotoInput = node({
-  type: 'n8n-nodes-base.set',
-  version: 3.4,
-  name: 'Set Photo Input',
+// === BRANCHE PHOTO/TEXTE: Code node (évite le nested ifElse) ===
+const routeInput = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  name: 'Router Message',
   config: {
-    mode: 'manual',
-    assignments: {
-      assignments: [
-        { id: '1', name: 'inputText', value: expr("{{ '[Image reçue] ' + ($('Telegram Trigger').item.json.message.caption || 'Analysez cette image') }}"), type: 'string' },
-        { id: '2', name: 'inputType', value: 'photo', type: 'string' },
-        { id: '3', name: 'chatId', value: expr("{{ $('Telegram Trigger').item.json.message.chat.id.toString() }}"), type: 'string' },
-        { id: '4', name: 'userId', value: expr("{{ $('Telegram Trigger').item.json.message.from.id.toString() }}"), type: 'string' },
-        { id: '5', name: 'username', value: expr("{{ $('Telegram Trigger').item.json.message.from.first_name }}"), type: 'string' },
-        { id: '6', name: 'photoFileId', value: expr("{{ $('Telegram Trigger').item.json.message.photo ? $('Telegram Trigger').item.json.message.photo[$('Telegram Trigger').item.json.message.photo.length-1].file_id : '' }}"), type: 'string' }
-      ]
-    }
-  }
-});
-
-// === TEXT BRANCH ===
-const setTextInput = node({
-  type: 'n8n-nodes-base.set',
-  version: 3.4,
-  name: 'Set Text Input',
-  config: {
-    mode: 'manual',
-    assignments: {
-      assignments: [
-        { id: '1', name: 'inputText', value: expr("{{ $json.message.text || $json.message.caption || 'Message vide' }}"), type: 'string' },
-        { id: '2', name: 'inputType', value: 'text', type: 'string' },
-        { id: '3', name: 'chatId', value: expr("{{ $json.message.chat.id.toString() }}"), type: 'string' },
-        { id: '4', name: 'userId', value: expr("{{ $json.message.from.id.toString() }}"), type: 'string' },
-        { id: '5', name: 'username', value: expr("{{ $json.message.from.first_name }}"), type: 'string' }
-      ]
-    }
+    mode: 'runOnceForAllItems',
+    jsCode: `const msg = $input.item.json.message;
+let inputText = '';
+let inputType = 'text';
+if (msg.photo && msg.photo.length > 0) {
+  inputType = 'photo';
+  inputText = '[IMAGE REÇUE] ' + (msg.caption || 'Analysez cette image en détail');
+} else {
+  inputType = 'text';
+  inputText = msg.text || msg.caption || 'Message vide';
+}
+return [{ json: {
+  inputText, inputType,
+  chatId: msg.chat.id.toString(),
+  userId: msg.from.id.toString(),
+  username: msg.from.first_name || 'Utilisateur'
+}}];`
   }
 });
 
 // === TOOLS ===
-const gmailReadTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolHttpRequest',
-  version: 1.1,
-  name: 'Gmail Read Tool',
-  config: {
-    method: 'GET',
-    url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
-    sendQuery: true,
-    parametersQuery: {
-      values: [
-        { name: 'maxResults', value: expr("{{ $fromAI('maxResults', 'Number of emails to retrieve', 'number') }}") },
-        { name: 'q', value: expr("{{ $fromAI('query', 'Gmail search query', 'string') }}") }
-      ]
-    },
-    description: 'Lire les emails Gmail. Utilise maxResults pour le nombre et q pour la recherche.',
-    sendHeaders: true,
-    parametersHeaders: {
-      values: [
-        { name: 'Authorization', value: expr("{{ 'Bearer ' + $credentials.gmailOAuth2.accessToken }}") }
-      ]
-    },
-    options: {}
-  },
-  credentials: { gmailOAuth2: newCredential('Gmail OAuth2') }
-});
-
 const gmailSendTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolHttpRequest',
-  version: 1.1,
-  name: 'Gmail Send Tool',
+  type: 'n8n-nodes-base.gmailTool',
+  version: 2.2,
+  name: 'Envoyer Email',
   config: {
-    method: 'POST',
-    url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-    description: 'Envoyer un email via Gmail.',
-    sendBody: true,
-    contentType: 'json',
-    bodyParameters: {
-      values: [
-        { name: 'raw', value: expr("{{ $fromAI('emailRaw', 'Base64 encoded email in RFC 2822 format', 'string') }}") }
-      ]
-    },
-    sendHeaders: true,
-    parametersHeaders: {
-      values: [
-        { name: 'Authorization', value: expr("{{ 'Bearer ' + $credentials.gmailOAuth2.accessToken }}") }
-      ]
-    },
+    resource: 'message',
+    operation: 'send',
+    sendTo: expr("{{ $fromAI('to', 'Email recipient', 'string') }}"),
+    subject: expr("{{ $fromAI('subject', 'Email subject', 'string') }}"),
+    emailType: 'html',
+    message: expr("{{ $fromAI('body', 'Email body content', 'string') }}"),
     options: {}
   },
   credentials: { gmailOAuth2: newCredential('Gmail OAuth2') }
 });
 
-const calendarReadTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolHttpRequest',
-  version: 1.1,
-  name: 'Calendar Read Tool',
+const gmailReadTool = tool({
+  type: 'n8n-nodes-base.gmailTool',
+  version: 2.2,
+  name: 'Lire Emails',
   config: {
-    method: 'GET',
-    url: 'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-    description: 'Lire les événements Google Calendar.',
-    sendQuery: true,
-    parametersQuery: {
-      values: [
-        { name: 'timeMin', value: expr("{{ $fromAI('timeMin', 'Start date ISO format', 'string') }}") },
-        { name: 'timeMax', value: expr("{{ $fromAI('timeMax', 'End date ISO format', 'string') }}") },
-        { name: 'maxResults', value: expr("{{ $fromAI('maxResults', 'Max number of events', 'number') }}") }
-      ]
-    },
-    sendHeaders: true,
-    parametersHeaders: {
-      values: [
-        { name: 'Authorization', value: expr("{{ 'Bearer ' + $credentials.googleCalendarOAuth2Api.accessToken }}") }
-      ]
-    },
+    resource: 'message',
+    operation: 'getAll',
+    returnAll: false,
+    limit: 10,
+    options: {}
+  },
+  credentials: { gmailOAuth2: newCredential('Gmail OAuth2') }
+});
+
+const calendarGetTool = tool({
+  type: 'n8n-nodes-base.googleCalendarTool',
+  version: 1.3,
+  name: 'Voir Agenda',
+  config: {
+    resource: 'event',
+    operation: 'getAll',
+    calendar: { __rl: true, mode: 'list', value: 'primary' },
+    returnAll: false,
+    limit: 20,
     options: {}
   },
   credentials: { googleCalendarOAuth2Api: newCredential('Google Calendar OAuth2') }
 });
 
 const calendarCreateTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolHttpRequest',
-  version: 1.1,
-  name: 'Calendar Create Tool',
+  type: 'n8n-nodes-base.googleCalendarTool',
+  version: 1.3,
+  name: 'Créer Événement',
   config: {
-    method: 'POST',
-    url: 'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-    description: 'Créer un événement dans Google Calendar.',
-    sendBody: true,
-    contentType: 'json',
-    bodyParameters: {
-      values: [
-        { name: 'summary', value: expr("{{ $fromAI('summary', 'Event title', 'string') }}") },
-        { name: 'description', value: expr("{{ $fromAI('description', 'Event description', 'string') }}") },
-        { name: 'start', value: expr("{{ $fromAI('start', 'Start time as JSON with dateTime field', 'string') }}") },
-        { name: 'end', value: expr("{{ $fromAI('end', 'End time as JSON with dateTime field', 'string') }}") }
-      ]
-    },
-    sendHeaders: true,
-    parametersHeaders: {
-      values: [
-        { name: 'Authorization', value: expr("{{ 'Bearer ' + $credentials.googleCalendarOAuth2Api.accessToken }}") }
-      ]
-    },
-    options: {}
+    resource: 'event',
+    operation: 'create',
+    calendar: { __rl: true, mode: 'list', value: 'primary' },
+    start: expr("{{ $fromAI('start', 'Start datetime ISO8601', 'string') }}"),
+    end: expr("{{ $fromAI('end', 'End datetime ISO8601', 'string') }}"),
+    additionalFields: {
+      summary: expr("{{ $fromAI('title', 'Event title', 'string') }}"),
+      description: expr("{{ $fromAI('description', 'Event description', 'string') }}")
+    }
   },
   credentials: { googleCalendarOAuth2Api: newCredential('Google Calendar OAuth2') }
 });
 
-const dbSearchContactsTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolPostgres',
+const dbSearchTool = tool({
+  type: 'n8n-nodes-base.postgresTool',
   version: 2.6,
-  name: 'Postgres Tool',
+  name: 'Chercher Contact',
   config: {
     operation: 'executeQuery',
-    query: expr("{{ 'SELECT * FROM contacts WHERE name ILIKE \\'%' + $fromAI('searchTerm', 'Contact name to search', 'string') + '%\\' OR email ILIKE \\'%' + $fromAI('searchEmail', 'Email to search', 'string') + '%\\' LIMIT 10;' }}"),
-    options: {}
-  },
-  credentials: { postgres: newCredential('Postgres DB') }
-});
-
-const dbAddContactTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolPostgres',
-  version: 2.6,
-  name: 'Add Contact Tool',
-  config: {
-    operation: 'executeQuery',
-    query: expr("{{ 'INSERT INTO contacts (name, email, phone, company, notes) VALUES (\\'' + $fromAI('name', 'Contact name', 'string') + '\\', \\'' + $fromAI('email', 'Contact email', 'string') + '\\', \\'' + $fromAI('phone', 'Contact phone', 'string') + '\\', \\'' + $fromAI('company', 'Contact company', 'string') + '\\', \\'' + $fromAI('notes', 'Additional notes', 'string') + '\\');' }}"),
+    query: expr("{{ 'SELECT * FROM contacts WHERE name ILIKE \\'%' + $fromAI('search', 'Name or email to search', 'string') + '%\\' LIMIT 10' }}"),
     options: {}
   },
   credentials: { postgres: newCredential('Postgres DB') }
 });
 
 const newsApiTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolHttpRequest',
-  version: 1.1,
-  name: 'News API Tool',
+  type: 'n8n-nodes-base.httpRequestTool',
+  version: 4.4,
+  name: 'Actualités News',
   config: {
     method: 'GET',
     url: 'https://newsapi.org/v2/top-headlines',
-    description: 'Récupérer les dernières actualités. Utilise country=fr pour France, category pour la catégorie.',
     sendQuery: true,
-    parametersQuery: {
-      values: [
-        { name: 'country', value: expr("{{ $fromAI('country', 'Country code (fr, us, gb)', 'string') }}") },
-        { name: 'category', value: expr("{{ $fromAI('category', 'Category: business, entertainment, general, health, science, sports, technology', 'string') }}") },
-        { name: 'q', value: expr("{{ $fromAI('query', 'Search keywords', 'string') }}") },
+    queryParameters: {
+      parameters: [
+        { name: 'country', value: expr("{{ $fromAI('country', 'Country code: fr, us', 'string') }}") },
+        { name: 'category', value: expr("{{ $fromAI('category', 'Category: business, general, technology', 'string') }}") },
         { name: 'pageSize', value: '10' },
-        { name: 'apiKey', value: expr("{{ $env['NEWSAPI_KEY'] || 'YOUR_NEWSAPI_KEY' }}") }
+        { name: 'apiKey', value: expr("{{ $env.NEWSAPI_KEY }}") }
       ]
     },
     options: {}
@@ -269,36 +203,24 @@ const newsApiTool = tool({
 });
 
 const imageGenTool = tool({
-  type: '@n8n/n8n-nodes-langchain.toolHttpRequest',
-  version: 1.1,
-  name: 'Image Gen Tool',
+  type: 'n8n-nodes-base.httpRequestTool',
+  version: 4.4,
+  name: 'Générer Image DALL-E',
   config: {
     method: 'POST',
     url: 'https://api.openai.com/v1/images/generations',
-    description: 'Générer une image avec DALL-E 3. Retourne une URL d\'image.',
+    authentication: 'genericCredentialType',
+    genericAuthType: 'httpBearerAuth',
     sendBody: true,
     contentType: 'json',
-    bodyParameters: {
-      values: [
-        { name: 'model', value: 'dall-e-3' },
-        { name: 'prompt', value: expr("{{ $fromAI('prompt', 'Detailed image description', 'string') }}") },
-        { name: 'n', value: '1' },
-        { name: 'size', value: '1024x1024' },
-        { name: 'quality', value: 'standard' }
-      ]
-    },
-    sendHeaders: true,
-    parametersHeaders: {
-      values: [
-        { name: 'Authorization', value: expr("{{ 'Bearer ' + $credentials.openAiApi.apiKey }}") }
-      ]
-    },
+    specifyBody: 'json',
+    jsonBody: expr("{{ JSON.stringify({ model: 'dall-e-3', prompt: $fromAI('prompt', 'Detailed image description in English', 'string'), n: 1, size: '1024x1024' }) }}"),
     options: {}
   },
-  credentials: { openAiApi: newCredential('OpenAI API') }
+  credentials: { httpBearerAuth: newCredential('OpenAI Bearer Auth') }
 });
 
-// === AI AGENT ===
+// === AGENT IA ===
 const aiAgent = node({
   type: '@n8n/n8n-nodes-langchain.agent',
   version: 3.1,
@@ -313,7 +235,7 @@ const aiAgent = node({
         version: 1.3,
         name: 'GPT-4o',
         config: {
-          model: 'gpt-4o',
+          model: { __rl: true, mode: 'id', value: 'gpt-4o' },
           options: { maxTokens: 2000 }
         },
         credentials: { openAiApi: newCredential('OpenAI API') }
@@ -321,29 +243,21 @@ const aiAgent = node({
       memory: memory({
         type: '@n8n/n8n-nodes-langchain.memoryPostgresChat',
         version: 1.3,
-        name: 'Postgres Memory',
+        name: 'Mémoire Conversation',
         config: {
+          sessionIdType: 'customKey',
           sessionKey: expr("{{ $json.chatId }}"),
           tableName: 'chat_memory',
           contextWindowLength: 20
         },
         credentials: { postgres: newCredential('Postgres DB') }
       }),
-      tools: [
-        gmailReadTool,
-        gmailSendTool,
-        calendarReadTool,
-        calendarCreateTool,
-        dbSearchContactsTool,
-        dbAddContactTool,
-        newsApiTool,
-        imageGenTool
-      ]
+      tools: [gmailSendTool, gmailReadTool, calendarGetTool, calendarCreateTool, dbSearchTool, newsApiTool, imageGenTool]
     }
   }
 });
 
-// === RESPONSE & LOGGING ===
+// === RÉPONSE ===
 const sendResponse = node({
   type: 'n8n-nodes-base.telegram',
   version: 1.2,
@@ -351,26 +265,18 @@ const sendResponse = node({
   config: {
     resource: 'message',
     operation: 'sendMessage',
-    chatId: expr("{{ $('Set Text Input').item.json.chatId || $('Set Voice Input').item.json.chatId || $('Set Photo Input').item.json.chatId }}"),
+    chatId: expr("{{ $('Données Vocale').item.json.chatId || $('Router Message').item.json.chatId }}"),
     text: expr("{{ $json.output }}"),
-    additionalFields: { parse_mode: 'Markdown' }
+    additionalFields: {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    }
   },
   credentials: { telegramApi: newCredential('Telegram API') }
 });
 
-const logInteraction = node({
-  type: 'n8n-nodes-base.postgres',
-  version: 2.6,
-  name: 'Log Interaction',
-  config: {
-    operation: 'executeQuery',
-    query: expr("{{ 'INSERT INTO messages_log (chat_id, user_id, username, input_type, user_message, agent_response) VALUES (\\'' + $('AGENT-IA').item.json.chatId + '\\', \\'' + $('AGENT-IA').item.json.userId + '\\', \\'' + $('AGENT-IA').item.json.username + '\\', \\'' + $('AGENT-IA').item.json.inputType + '\\', \\'' + $('AGENT-IA').item.json.inputText.replace(/\\'/g, \\'\\'\\'\\') + '\\', \\'' + $json.output.replace(/\\'/g, \\'\\'\\'\\') + '\\')' }}"),
-    options: {}
-  },
-  credentials: { postgres: newCredential('Postgres DB') }
-});
-
-// === WORKFLOW ASSEMBLY ===
+// === ASSEMBLAGE ===
+// Un seul ifElse pour la voix, Code node pour photo/texte
 wf.add(
   tgTrigger.to(
     ifElse({
@@ -383,21 +289,9 @@ wf.add(
       }
     })
     .onTrue(transcribeVoice.to(setVoiceInput).to(aiAgent))
-    .onFalse(
-      ifElse({
-        conditions: {
-          conditions: [{
-            leftValue: expr("{{ $json.message.photo ? true : false }}"),
-            operator: { type: 'boolean', operation: 'true' },
-            rightValue: ''
-          }]
-        }
-      })
-      .onTrue(setPhotoInput.to(aiAgent))
-      .onFalse(setTextInput.to(aiAgent))
-    )
+    .onFalse(routeInput.to(aiAgent))
   )
 );
-aiAgent.to(sendResponse).to(logInteraction);
+aiAgent.to(sendResponse);
 
 export default wf;
