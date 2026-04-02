@@ -6,10 +6,11 @@
  * Features:
  * - Telegram trigger (text, voice, image)
  * - Voice: If node → OpenAI Whisper transcription → Set node
- * - Photo/Text: Code node router (no nested ifElse)
- * - GPT-4o AI Agent avec mémoire Postgres
+ * - Photo/Text: Code node router avec transmission des données binaires (vision)
+ * - GPT-4o AI Agent avec mémoire Postgres (multimodal + vision)
  * - Tools: Gmail (send+read), Google Calendar (read+create),
  *          Postgres contacts, NewsAPI, DALL-E 3
+ * - Génération d'image: DALL-E 3 avec envoi photo Telegram direct
  *
  * Variables d'environnement nécessaires:
  * - NEWSAPI_KEY: clé API newsapi.org
@@ -33,9 +34,11 @@ Tu as accès aux outils suivants:
 - Créer Événement: ajoute un événement au calendrier
 - Chercher Contact: recherche dans la base de données
 - Actualités News: récupère les dernières nouvelles
-- Générer Image DALL-E: crée des images avec DALL-E 3
+- Générer Image DALL-E: crée des images avec DALL-E 3 et retourne une URL d'image
+- Analyser Images: tu peux voir et analyser les images envoyées par l'utilisateur (vision GPT-4o)
 
-Réponds TOUJOURS en français. Sois concis, précis et utile. Utilise des émojis.`;
+Réponds TOUJOURS en français. Sois concis, précis et utile. Utilise des émojis.
+Quand tu génères une image avec DALL-E, inclus obligatoirement l'URL complète de l'image dans ta réponse.`;
 
 const tgTrigger = trigger({
   type: 'n8n-nodes-base.telegramTrigger',
@@ -80,7 +83,7 @@ const setVoiceInput = node({
   }
 });
 
-// === BRANCHE PHOTO/TEXTE: Code node (évite le nested ifElse) ===
+// === BRANCHE PHOTO/TEXTE: Code node avec passage des données binaires pour la vision ===
 const routeInput = node({
   type: 'n8n-nodes-base.code',
   version: 2,
@@ -90,19 +93,29 @@ const routeInput = node({
     jsCode: `const msg = $input.item.json.message;
 let inputText = '';
 let inputType = 'text';
+const outputItem = { json: {} };
+
 if (msg.photo && msg.photo.length > 0) {
   inputType = 'photo';
-  inputText = '[IMAGE REÇUE] ' + (msg.caption || 'Analysez cette image en détail');
+  inputText = msg.caption || 'Analysez cette image en détail';
+  // Transmission des données binaires pour la vision GPT-4o
+  if ($input.item.binary) {
+    outputItem.binary = $input.item.binary;
+  }
 } else {
   inputType = 'text';
   inputText = msg.text || msg.caption || 'Message vide';
 }
-return [{ json: {
-  inputText, inputType,
+
+outputItem.json = {
+  inputText,
+  inputType,
   chatId: msg.chat.id.toString(),
   userId: msg.from.id.toString(),
   username: msg.from.first_name || 'Utilisateur'
-}}];`
+};
+
+return [outputItem];`
   }
 });
 
@@ -220,7 +233,7 @@ const imageGenTool = tool({
   credentials: { httpBearerAuth: newCredential('OpenAI Bearer Auth') }
 });
 
-// === AGENT IA ===
+// === AGENT IA (GPT-4o multimodal avec vision) ===
 const aiAgent = node({
   type: '@n8n/n8n-nodes-langchain.agent',
   version: 3.1,
@@ -236,7 +249,10 @@ const aiAgent = node({
         name: 'GPT-4o',
         config: {
           model: { __rl: true, mode: 'id', value: 'gpt-4o' },
-          options: { maxTokens: 2000 }
+          options: {
+            maxTokens: 2000,
+            allowImageUploads: true
+          }
         },
         credentials: { openAiApi: newCredential('OpenAI API') }
       }),
@@ -257,7 +273,66 @@ const aiAgent = node({
   }
 });
 
-// === RÉPONSE ===
+// === TRAITEMENT DE LA RÉPONSE: détection URL image générée ===
+const traiterReponse = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  name: 'Traiter Réponse',
+  config: {
+    mode: 'runOnceForAllItems',
+    jsCode: `const output = $input.item.json.output || '';
+
+// Détecter les URLs d'images générées par DALL-E
+const urlRegex = /https:\/\/[^\s<>"]+\.(?:png|jpg|jpeg|webp)(?:\?[^\s<>"]*)?/gi;
+const dalleRegex = /https:\/\/oaidalleapiprodscus[^\s<>"]+/gi;
+
+let imageUrl = null;
+const dalleMatch = output.match(dalleRegex);
+if (dalleMatch) {
+  imageUrl = dalleMatch[0];
+} else {
+  const urlMatch = output.match(urlRegex);
+  if (urlMatch) {
+    imageUrl = urlMatch[0];
+  }
+}
+
+// Récupérer le chatId depuis les branches amont
+let chatId = '';
+try { chatId = $('Router Message').item.json.chatId; } catch(e) {}
+if (!chatId) {
+  try { chatId = $('Données Vocale').item.json.chatId; } catch(e) {}
+}
+
+return [{
+  json: {
+    output,
+    imageUrl,
+    hasImage: !!imageUrl,
+    chatId
+  }
+}];`
+  }
+});
+
+// === ENVOI IMAGE: Telegram sendPhoto pour les images générées ===
+const sendImageTelegram = node({
+  type: 'n8n-nodes-base.telegram',
+  version: 1.2,
+  name: 'Envoyer Image',
+  config: {
+    resource: 'message',
+    operation: 'sendPhoto',
+    chatId: expr("{{ $json.chatId }}"),
+    file: expr("{{ $json.imageUrl }}"),
+    additionalFields: {
+      caption: expr("{{ $json.output.replace(/https:\\/\\/[^\\s]+/g, '').trim() }}")
+    }
+  },
+  credentials: { telegramApi: newCredential('Telegram API') }
+});
+
+// === ENVOI TEXTE: Telegram sendMessage pour les réponses texte ===
 const sendResponse = node({
   type: 'n8n-nodes-base.telegram',
   version: 1.2,
@@ -265,7 +340,7 @@ const sendResponse = node({
   config: {
     resource: 'message',
     operation: 'sendMessage',
-    chatId: expr("{{ $('Données Vocale').item.json.chatId || $('Router Message').item.json.chatId }}"),
+    chatId: expr("{{ $json.chatId }}"),
     text: expr("{{ $json.output }}"),
     additionalFields: {
       parse_mode: 'Markdown',
@@ -276,7 +351,6 @@ const sendResponse = node({
 });
 
 // === ASSEMBLAGE ===
-// Un seul ifElse pour la voix, Code node pour photo/texte
 wf.add(
   tgTrigger.to(
     ifElse({
@@ -292,6 +366,22 @@ wf.add(
     .onFalse(routeInput.to(aiAgent))
   )
 );
-aiAgent.to(sendResponse);
+
+// Après l'agent: détecter image ou texte, puis envoyer selon le cas
+aiAgent.to(
+  traiterReponse.to(
+    ifElse({
+      conditions: {
+        conditions: [{
+          leftValue: expr("{{ $json.hasImage }}"),
+          operator: { type: 'boolean', operation: 'true' },
+          rightValue: ''
+        }]
+      }
+    })
+    .onTrue(sendImageTelegram)
+    .onFalse(sendResponse)
+  )
+);
 
 export default wf;
