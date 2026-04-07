@@ -4,6 +4,28 @@ Système complet d'acquisition de leads, qualification, outreach personnalisé e
 
 ---
 
+## Workflows N8N — Liens Directs
+
+| # | Nom | ID N8N | Lien | Statut |
+|---|-----|--------|------|--------|
+| 1 | 🎯 Acquisition de Leads | `l5LtsKCxiVJXEg6Z` | [Ouvrir](https://nz0439.app.n8n.cloud/workflow/l5LtsKCxiVJXEg6Z) | Inactif — configurer les nodes |
+| 2 | 📊 Qualification & Scoring | `4RTtMyG8SO8o82c1` | [Ouvrir](https://nz0439.app.n8n.cloud/workflow/4RTtMyG8SO8o82c1) | Inactif — configurer les nodes |
+| 3 | 📧 Outreach & Follow-ups | `mU81EopFgct5juAU` | [Ouvrir](https://nz0439.app.n8n.cloud/workflow/mU81EopFgct5juAU) | Inactif — configurer les nodes |
+| 4 | 💬 Gestion des Réponses | `rYJ7YfwORA1VyYvO` | [Ouvrir](https://nz0439.app.n8n.cloud/workflow/rYJ7YfwORA1VyYvO) | Inactif — configurer les nodes |
+| 5 | 📅 Booking & Calendrier | `VedvqBzgSuhEi0g5` | [Ouvrir](https://nz0439.app.n8n.cloud/workflow/VedvqBzgSuhEi0g5) | Inactif — configurer les nodes |
+
+### Import des Nodes dans chaque Workflow
+
+Pour chaque workflow ci-dessus :
+
+1. **Ouvrir** le workflow via le lien
+2. **Copier** le contenu JSON du fichier correspondant dans `workflows/`
+3. Dans N8N, cliquer sur le canvas vide → **Ctrl+V** (coller)
+4. Les nodes apparaissent — **configurer les credentials** (Postgres, Gmail, OpenAI, etc.)
+5. **Sauvegarder** puis **Activer**
+
+---
+
 ## Architecture du Système
 
 ```
