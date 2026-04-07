@@ -1,0 +1,152 @@
+{
+  "name": "B2B Prospecting — 1. Acquisition de Leads",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 9 * * 1-5" }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Déclencheur (Lun-Ven 9h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "notes": "Se déclenche du lundi au vendredi à 9h. Ajustez selon vos besoins."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// CONFIG : Définir les recherches à effectuer\n// ============================================\n\nconst searches = [\n  {\n    source: 'google_maps',\n    query: 'agence digitale Paris',\n    location: 'Paris, France',\n    max_results: 20\n  },\n  {\n    source: 'google_maps',\n    query: 'agence marketing Lyon',\n    location: 'Lyon, France',\n    max_results: 20\n  },\n  {\n    source: 'google_maps',\n    query: 'startup SaaS Bordeaux',\n    location: 'Bordeaux, France',\n    max_results: 20\n  }\n];\n\nreturn searches.map(s => ({ json: s }));"
+      },
+      "id": "config-searches",
+      "name": "Config Recherches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300],
+      "notes": "Configurez ici les requêtes de recherche Google Maps. Ajoutez autant de recherches que nécessaire."
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "engine", "value": "google_maps" },
+            { "name": "q", "value": "={{ $json.query }}" },
+            { "name": "ll", "value": "={{ $json.location }}" },
+            { "name": "type", "value": "search" },
+            { "name": "api_key", "value": "={{ $env.SERPAPI_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "serpapi-google-maps",
+      "name": "SerpAPI Google Maps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 200],
+      "notes": "Alternative gratuite : utilisez Apify Google Maps Scraper ou le node Google Maps de n8n community."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parser les résultats Google Maps\nconst results = $input.first().json;\nconst sourceQuery = $('Config Recherches').first().json.query;\n\nif (!results.local_results || results.local_results.length === 0) {\n  return [{ json: { error: 'Aucun résultat', query: sourceQuery } }];\n}\n\nreturn results.local_results.map(r => ({\n  json: {\n    company_name: r.title || '',\n    company_domain: r.website ? new URL(r.website).hostname.replace('www.', '') : '',\n    website: r.website || '',\n    phone: r.phone || '',\n    company_location: r.address || '',\n    rating: r.rating || null,\n    reviews: r.reviews || 0,\n    company_industry: r.type || '',\n    source: 'google_maps',\n    source_query: sourceQuery\n  }\n}));"
+      },
+      "id": "parse-gmaps",
+      "name": "Parser Résultats Maps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.apollo.io/v1/mixed_people/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.APOLLO_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"q_organization_domains\": \"{{ $json.company_domain }}\",\n  \"person_titles\": [\"CEO\", \"Founder\", \"CMO\", \"Directeur Commercial\", \"Head of Growth\", \"VP Sales\", \"VP Marketing\"],\n  \"per_page\": 3\n}",
+        "options": {}
+      },
+      "id": "apollo-enrichment",
+      "name": "Apollo — Trouver Contacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 450],
+      "notes": "Apollo.io : 10K crédits/mois en gratuit. Alternative : Hunter.io, Snov.io, ou Dropcontact (RGPD-friendly, FR)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fusionner données entreprise + contacts Apollo\nconst companyData = $('Parser Résultats Maps').first().json;\nconst apolloResult = $input.first().json;\n\nif (!apolloResult.people || apolloResult.people.length === 0) {\n  // Pas de contacts trouvés — garder l'entreprise pour recherche manuelle\n  return [{\n    json: {\n      ...companyData,\n      first_name: '',\n      last_name: '',\n      email: '',\n      job_title: '',\n      linkedin_url: '',\n      enrichment_status: 'no_contacts_found'\n    }\n  }];\n}\n\nreturn apolloResult.people.map(person => ({\n  json: {\n    first_name: person.first_name || '',\n    last_name: person.last_name || '',\n    email: person.email || '',\n    email_verified: person.email_status === 'verified',\n    linkedin_url: person.linkedin_url || '',\n    phone: person.phone_numbers?.[0]?.raw_number || companyData.phone || '',\n    job_title: person.title || '',\n    company_name: companyData.company_name || person.organization?.name || '',\n    company_domain: companyData.company_domain || person.organization?.primary_domain || '',\n    company_size: person.organization?.estimated_num_employees?.toString() || '',\n    company_industry: companyData.company_industry || person.organization?.industry || '',\n    company_location: companyData.company_location || '',\n    company_description: person.organization?.short_description || '',\n    company_linkedin: person.organization?.linkedin_url || '',\n    source: 'google_maps+apollo',\n    source_query: companyData.source_query || '',\n    enrichment_status: 'enriched'\n  }\n}));"
+      },
+      "id": "merge-data",
+      "name": "Fusionner Données",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// NORMALISATION + DÉDUPLICATION\n// Utilise les fonctions de enrichment.js\n// ============================================\n\nfunction cleanName(name) {\n  return name.trim().replace(/\\s+/g, ' ')\n    .split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');\n}\n\nfunction extractDomain(input) {\n  if (!input) return '';\n  if (input.includes('@')) {\n    const domain = input.split('@')[1];\n    const generic = ['gmail.com','yahoo.com','hotmail.com','outlook.com','orange.fr','free.fr'];\n    if (generic.includes(domain)) return '';\n    return domain;\n  }\n  try {\n    const url = new URL(input.startsWith('http') ? input : 'https://' + input);\n    return url.hostname.replace(/^www\\./, '');\n  } catch { return input; }\n}\n\nfunction detectSeniority(title) {\n  const t = (title || '').toLowerCase();\n  if (/\\b(ceo|cto|cmo|founder|pdg|dg)\\b/.test(t)) return 'C-Level';\n  if (/\\b(vp|vice)\\b/.test(t)) return 'VP';\n  if (/\\b(directeur|director|head)\\b/.test(t)) return 'Director';\n  if (/\\b(manager|responsable|lead)\\b/.test(t)) return 'Manager';\n  return 'Individual';\n}\n\n// Dédup par email\nconst seen = new Set();\nconst results = [];\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  const key = d.email || `${d.first_name}_${d.last_name}_${d.company_name}`;\n  if (seen.has(key)) continue;\n  seen.add(key);\n\n  results.push({\n    json: {\n      first_name: cleanName(d.first_name || ''),\n      last_name: cleanName(d.last_name || ''),\n      email: (d.email || '').trim().toLowerCase(),\n      email_verified: d.email_verified || false,\n      linkedin_url: d.linkedin_url || '',\n      phone: d.phone || '',\n      job_title: d.job_title || '',\n      seniority: detectSeniority(d.job_title),\n      company_name: d.company_name || '',\n      company_domain: extractDomain(d.company_domain || d.email || ''),\n      company_size: d.company_size || '',\n      company_industry: d.company_industry || '',\n      company_location: d.company_location || '',\n      company_description: d.company_description || '',\n      company_linkedin: d.company_linkedin || '',\n      source: d.source || 'unknown',\n      source_query: d.source_query || '',\n      status: 'new',\n      consent_status: 'legitimate_interest',\n      opt_out: false,\n      data_retention_until: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0]\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "normalize-dedup",
+      "name": "Normaliser + Dédupliquer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (first_name, last_name, email, email_verified, linkedin_url, phone, job_title, seniority, company_name, company_domain, company_size, company_industry, company_location, company_description, company_linkedin, source, source_query, status, consent_status, opt_out, data_retention_until) VALUES ('{{ $json.first_name }}', '{{ $json.last_name }}', '{{ $json.email }}', {{ $json.email_verified }}, '{{ $json.linkedin_url }}', '{{ $json.phone }}', '{{ $json.job_title }}', '{{ $json.seniority }}', '{{ $json.company_name }}', '{{ $json.company_domain }}', '{{ $json.company_size }}', '{{ $json.company_industry }}', '{{ $json.company_location }}', '{{ $json.company_description }}', '{{ $json.company_linkedin }}', '{{ $json.source }}', '{{ $json.source_query }}', 'new', '{{ $json.consent_status }}', false, '{{ $json.data_retention_until }}') ON CONFLICT (email) DO NOTHING RETURNING id;",
+        "options": {}
+      },
+      "id": "save-to-db",
+      "name": "Sauvegarder en BDD",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } },
+      "notes": "ON CONFLICT (email) DO NOTHING évite les doublons. Remplacez le credential ID."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO activity_log (lead_id, action, details) VALUES ({{ $json.id }}, 'lead_created', '{\"source\": \"{{ $json.source }}\", \"query\": \"{{ $json.source_query }}\"}')",
+        "options": {}
+      },
+      "id": "log-activity",
+      "name": "Logger Activité",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1540, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    }
+  ],
+  "connections": {
+    "Déclencheur (Lun-Ven 9h)": { "main": [[{ "node": "Config Recherches", "type": "main", "index": 0 }]] },
+    "Config Recherches": {
+      "main": [
+        [
+          { "node": "SerpAPI Google Maps", "type": "main", "index": 0 },
+          { "node": "Apollo — Trouver Contacts", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "SerpAPI Google Maps": { "main": [[{ "node": "Parser Résultats Maps", "type": "main", "index": 0 }]] },
+    "Parser Résultats Maps": { "main": [[{ "node": "Apollo — Trouver Contacts", "type": "main", "index": 0 }]] },
+    "Apollo — Trouver Contacts": { "main": [[{ "node": "Fusionner Données", "type": "main", "index": 0 }]] },
+    "Fusionner Données": { "main": [[{ "node": "Normaliser + Dédupliquer", "type": "main", "index": 0 }]] },
+    "Normaliser + Dédupliquer": { "main": [[{ "node": "Sauvegarder en BDD", "type": "main", "index": 0 }]] },
+    "Sauvegarder en BDD": { "main": [[{ "node": "Logger Activité", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "b2b-prospecting-acquisition"
+  }
+}

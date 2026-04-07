@@ -1,0 +1,172 @@
+{
+  "name": "B2B Prospecting — 3. Outreach & Follow-ups",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 10 * * 1-5" }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Déclencheur (10h Lun-Ven)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM leads WHERE status = 'qualified' AND score >= 50 AND opt_out = FALSE AND email != '' AND (last_contacted_at IS NULL OR next_followup_at <= NOW()) ORDER BY score DESC LIMIT {{ $env.DAILY_EMAIL_LIMIT || 50 }};",
+        "options": {}
+      },
+      "id": "fetch-qualified",
+      "name": "Leads à Contacter",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [420, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Déterminer le step de la séquence pour chaque lead\nreturn $input.all().map(item => {\n  const lead = item.json;\n  let step = 1; // Premier contact par défaut\n  \n  if (lead.last_contacted_at) {\n    // Vérifier combien de messages ont déjà été envoyés\n    // On incrémente le step basé sur next_followup_at\n    step = lead.status === 'contacted' ? 2 : 3;\n  }\n  \n  return {\n    json: {\n      ...lead,\n      current_step: step,\n      max_steps: 3 // Premier contact + 2 follow-ups\n    }\n  };\n});"
+      },
+      "id": "determine-step",
+      "name": "Déterminer Step Séquence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            { "leftValue": "={{ $json.current_step }}", "rightValue": 1, "operator": { "type": "number", "operation": "equals" } }
+          ]
+        }
+      },
+      "id": "is-first-contact",
+      "name": "Premier Contact ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Tu es un copywriter expert en cold email B2B. Rédige un email de premier contact ultra-personnalisé.\n\nRÈGLES :\n- Max 100 mots pour le corps\n- PAS de formules génériques (\"Je me permets\", \"J'espère que\")\n- Commence par un hook spécifique au prospect\n- UNE seule proposition de valeur\n- UN seul CTA (question ouverte ou proposition de call 15 min)\n- Ajoute à la fin : \"PS : Si vous ne souhaitez plus recevoir mes messages, répondez simplement STOP.\"\n\nRéponds en JSON :\n{\"subject_a\": \"...\", \"subject_b\": \"...\", \"body\": \"...\"}"
+            },
+            {
+              "role": "user",
+              "content": "Prospect : {{ $json.first_name }} {{ $json.last_name }}, {{ $json.job_title }} chez {{ $json.company_name }} ({{ $json.company_industry }}, {{ $json.company_size }} employés).\nDescription entreprise : {{ $json.company_description }}\n\nExpéditeur : {{ $env.SENDER_NAME || 'Julien Martin' }}, {{ $env.SENDER_TITLE || 'Growth Lead' }} @ {{ $env.SENDER_COMPANY || 'AgentIA' }}\n\nNotre offre : Automatisation de la prospection B2B avec l'IA — leads qualifiés, messages personnalisés, RDV bookés."
+            }
+          ]
+        },
+        "options": { "temperature": 0.8, "maxTokens": 400 }
+      },
+      "id": "gpt-first-email",
+      "name": "GPT — Premier Email",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [1100, 200],
+      "credentials": { "openAiApi": { "id": "VOTRE_CREDENTIAL_ID", "name": "OpenAI API" } }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Tu es un copywriter expert. Rédige un follow-up court (max 80 mots).\n\nRÈGLES :\n- Ne PAS répéter le premier message\n- Apporter un élément nouveau (stat, cas client)\n- Pas de \"Je me permets de relancer\"\n- Ton léger\n\nSi c'est le follow-up final (step 3), fais un breakup email ultra court (50 mots max), ton factuel, laisser la porte ouverte.\n\nRéponds en JSON : {\"subject\": \"...\", \"body\": \"...\"}"
+            },
+            {
+              "role": "user",
+              "content": "Prospect : {{ $json.first_name }}, {{ $json.job_title }} @ {{ $json.company_name }}\nStep : {{ $json.current_step }}/{{ $json.max_steps }}\nExpéditeur : {{ $env.SENDER_NAME || 'Julien' }}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.7, "maxTokens": 300 }
+      },
+      "id": "gpt-followup",
+      "name": "GPT — Follow-up",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [1100, 450],
+      "credentials": { "openAiApi": { "id": "VOTRE_CREDENTIAL_ID", "name": "OpenAI API" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parser la réponse GPT (JSON dans le content)\nconst lead = $('Déterminer Step Séquence').item.json;\nconst gptResponse = $input.first().json;\n\nlet parsed;\ntry {\n  const content = gptResponse.message?.content || gptResponse.choices?.[0]?.message?.content || '{}';\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = { subject: 'Question rapide', body: gptResponse.message?.content || 'Erreur de parsing' };\n}\n\n// A/B testing : utiliser subject_a ou subject_b aléatoirement\nconst subject = parsed.subject || (Math.random() > 0.5 ? parsed.subject_a : parsed.subject_b) || 'Question rapide';\n\nreturn [{\n  json: {\n    lead_id: lead.id,\n    to_email: lead.email,\n    to_name: `${lead.first_name} ${lead.last_name}`,\n    subject: subject,\n    body: parsed.body || '',\n    step: lead.current_step,\n    ab_variant: parsed.subject_a ? (subject === parsed.subject_a ? 'A' : 'B') : null,\n    company_name: lead.company_name\n  }\n}];"
+      },
+      "id": "prepare-email",
+      "name": "Préparer Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to_email }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {
+          "replyTo": "={{ $env.SENDER_EMAIL || 'julien@votreentreprise.com' }}"
+        }
+      },
+      "id": "send-email",
+      "name": "Envoyer Email (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1540, 300],
+      "credentials": { "gmailOAuth2": { "id": "VOTRE_CREDENTIAL_ID", "name": "Gmail OAuth2" } },
+      "notes": "Alternative : utilisez SMTP avec un domaine dédié + outil de warmup (Instantly, Lemwarm)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Throttle : attendre entre chaque email\nconst delay = parseInt('{{ $env.EMAIL_DELAY_SECONDS }}') || 60;\nawait new Promise(resolve => setTimeout(resolve, delay * 1000));\nreturn $input.all();"
+      },
+      "id": "throttle",
+      "name": "Throttle (Anti-Spam)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300],
+      "notes": "Délai entre chaque email pour éviter d'être flaggé comme spam."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO outreach_messages (lead_id, step_number, channel, direction, subject, body, status, sent_at) VALUES ({{ $json.lead_id }}, {{ $json.step }}, 'email', 'outbound', '{{ $json.subject }}', '{{ $json.body.replace(/'/g, \"''\") }}', 'sent', NOW());\n\nUPDATE leads SET status = 'contacted', last_contacted_at = NOW(), next_followup_at = CASE WHEN {{ $json.step }} = 1 THEN NOW() + INTERVAL '3 days' WHEN {{ $json.step }} = 2 THEN NOW() + INTERVAL '4 days' ELSE NULL END, updated_at = NOW() WHERE id = {{ $json.lead_id }};",
+        "options": {}
+      },
+      "id": "log-message",
+      "name": "Logger Message + MAJ Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1980, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    }
+  ],
+  "connections": {
+    "Déclencheur (10h Lun-Ven)": { "main": [[{ "node": "Leads à Contacter", "type": "main", "index": 0 }]] },
+    "Leads à Contacter": { "main": [[{ "node": "Déterminer Step Séquence", "type": "main", "index": 0 }]] },
+    "Déterminer Step Séquence": { "main": [[{ "node": "Premier Contact ?", "type": "main", "index": 0 }]] },
+    "Premier Contact ?": {
+      "main": [
+        [{ "node": "GPT — Premier Email", "type": "main", "index": 0 }],
+        [{ "node": "GPT — Follow-up", "type": "main", "index": 0 }]
+      ]
+    },
+    "GPT — Premier Email": { "main": [[{ "node": "Préparer Email", "type": "main", "index": 0 }]] },
+    "GPT — Follow-up": { "main": [[{ "node": "Préparer Email", "type": "main", "index": 0 }]] },
+    "Préparer Email": { "main": [[{ "node": "Envoyer Email (Gmail)", "type": "main", "index": 0 }]] },
+    "Envoyer Email (Gmail)": { "main": [[{ "node": "Throttle (Anti-Spam)", "type": "main", "index": 0 }]] },
+    "Throttle (Anti-Spam)": { "main": [[{ "node": "Logger Message + MAJ Lead", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "instanceId": "b2b-prospecting-outreach" }
+}

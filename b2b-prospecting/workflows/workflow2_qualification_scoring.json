@@ -1,0 +1,122 @@
+{
+  "name": "B2B Prospecting — 2. Qualification & Scoring",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "30 9 * * 1-5" }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Déclencheur (9h30 Lun-Ven)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "notes": "30 min après l'acquisition pour laisser le temps aux leads d'être créés"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM leads WHERE status = 'new' AND opt_out = FALSE ORDER BY created_at DESC LIMIT 50;",
+        "options": {}
+      },
+      "id": "fetch-new-leads",
+      "name": "Récupérer Leads Non Qualifiés",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [420, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// SCORING LOCAL (sans API, gratuit)\n// Copié depuis scripts/scoring.js\n// ============================================\n\nfunction scoreLead(lead) {\n  const breakdown = {\n    company_size: scoreCompanySize(lead.company_size),\n    job_title: scoreJobTitle(lead.job_title),\n    industry: scoreIndustry(lead.company_industry),\n    buying_signals: 5, // Par défaut, signaux non détectés\n    accessibility: scoreAccessibility(lead)\n  };\n  const total = Object.values(breakdown).reduce((s, v) => s + v, 0);\n  const label = total >= 70 ? 'chaud' : total >= 40 ? 'tiede' : 'froid';\n  return { score: Math.min(total, 100), label, breakdown, priority: label === 'chaud' ? 1 : label === 'tiede' ? 2 : 3 };\n}\n\nfunction scoreCompanySize(size) {\n  const num = parseInt(size);\n  if (isNaN(num)) return 5;\n  if (num <= 10) return 5;\n  if (num <= 50) return 15;\n  if (num <= 200) return 20;\n  if (num <= 500) return 15;\n  return 5;\n}\n\nfunction scoreJobTitle(title) {\n  if (!title) return 3;\n  const t = title.toLowerCase();\n  if (/\\b(ceo|founder|pdg|dg|président|fondateur)\\b/.test(t)) return 25;\n  if (/\\b(vp|vice)\\b/.test(t)) return 22;\n  if (/\\b(directeur|director|head of)\\b/.test(t)) return 20;\n  if (/\\b(manager|responsable|lead)\\b/.test(t)) return 12;\n  if (/\\b(stagiaire|intern|student)\\b/.test(t)) return 0;\n  return 5;\n}\n\nfunction scoreIndustry(industry) {\n  if (!industry) return 3;\n  const i = industry.toLowerCase();\n  if (/saas|software|tech/.test(i)) return 20;\n  if (/agence|agency|digital|marketing/.test(i)) return 18;\n  if (/e-commerce|ecommerce/.test(i)) return 17;\n  if (/conseil|consulting|b2b/.test(i)) return 15;\n  if (/finance|immobilier/.test(i)) return 10;\n  return 5;\n}\n\nfunction scoreAccessibility(lead) {\n  let s = 0;\n  if (lead.email && lead.email_verified) s += 8;\n  else if (lead.email) s += 4;\n  if (lead.linkedin_url) s += 4;\n  if (lead.phone) s += 3;\n  return Math.min(s, 15);\n}\n\n// Traiter tous les leads\nreturn $input.all().map(item => {\n  const lead = item.json;\n  const result = scoreLead(lead);\n  return {\n    json: {\n      id: lead.id,\n      first_name: lead.first_name,\n      last_name: lead.last_name,\n      email: lead.email,\n      job_title: lead.job_title,\n      company_name: lead.company_name,\n      company_industry: lead.company_industry,\n      company_size: lead.company_size,\n      company_description: lead.company_description,\n      ...result\n    }\n  };\n});"
+      },
+      "id": "score-leads",
+      "name": "Scorer les Leads (Local)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300],
+      "notes": "Scoring 100% local, sans appel API = 0€. Pour les leads chauds, on enrichit avec GPT ensuite."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            { "leftValue": "={{ $json.label }}", "rightValue": "chaud", "operator": { "type": "string", "operation": "equals" } }
+          ]
+        }
+      },
+      "id": "if-hot",
+      "name": "Lead Chaud ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Tu es un analyste commercial B2B. Analyse ce prospect et suggère le meilleur angle d'approche en 1 phrase. Réponds en JSON : {\"recommended_angle\": \"...\", \"key_insight\": \"...\", \"personalization_hook\": \"...\"}"
+            },
+            {
+              "role": "user",
+              "content": "Prospect : {{ $json.first_name }} {{ $json.last_name }}, {{ $json.job_title }} chez {{ $json.company_name }} ({{ $json.company_industry }}, {{ $json.company_size }} employés). Description : {{ $json.company_description }}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.7, "maxTokens": 200 }
+      },
+      "id": "gpt-enrich-hot",
+      "name": "GPT — Angle d'Approche (Chauds)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [1100, 200],
+      "credentials": { "openAiApi": { "id": "VOTRE_CREDENTIAL_ID", "name": "OpenAI API" } },
+      "notes": "Seulement pour les leads chauds (score >= 70). GPT-4o-mini = ~0.001€/lead."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET score = {{ $json.score }}, score_label = '{{ $json.label }}', score_details = '{{ JSON.stringify($json.breakdown) }}', status = 'qualified', updated_at = NOW() WHERE id = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "update-hot-leads",
+      "name": "Mettre à Jour Leads Chauds",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, 200],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET score = {{ $json.score }}, score_label = '{{ $json.label }}', score_details = '{{ JSON.stringify($json.breakdown) }}', status = CASE WHEN {{ $json.score }} >= 40 THEN 'qualified' ELSE 'new' END, updated_at = NOW() WHERE id = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "update-other-leads",
+      "name": "Mettre à Jour Tièdes/Froids",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, 450],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    }
+  ],
+  "connections": {
+    "Déclencheur (9h30 Lun-Ven)": { "main": [[{ "node": "Récupérer Leads Non Qualifiés", "type": "main", "index": 0 }]] },
+    "Récupérer Leads Non Qualifiés": { "main": [[{ "node": "Scorer les Leads (Local)", "type": "main", "index": 0 }]] },
+    "Scorer les Leads (Local)": { "main": [[{ "node": "Lead Chaud ?", "type": "main", "index": 0 }]] },
+    "Lead Chaud ?": {
+      "main": [
+        [{ "node": "GPT — Angle d'Approche (Chauds)", "type": "main", "index": 0 }],
+        [{ "node": "Mettre à Jour Tièdes/Froids", "type": "main", "index": 0 }]
+      ]
+    },
+    "GPT — Angle d'Approche (Chauds)": { "main": [[{ "node": "Mettre à Jour Leads Chauds", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "instanceId": "b2b-prospecting-qualification" }
+}

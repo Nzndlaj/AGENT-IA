@@ -1,0 +1,152 @@
+{
+  "name": "B2B Prospecting — 5. Booking & Calendrier",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "booking-webhook",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Booking",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "notes": "Déclenché par le workflow 4 quand un prospect veut un RDV, ou par Calendly webhook."
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * 1-5" }]
+        }
+      },
+      "id": "schedule-check",
+      "name": "Vérif Quotidienne (8h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 500],
+      "notes": "Vérifie les RDV du jour et envoie des rappels."
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": "primary",
+        "returnAll": false,
+        "limit": 20,
+        "options": {
+          "timeMin": "={{ new Date().toISOString() }}",
+          "timeMax": "={{ new Date(Date.now() + 7*24*60*60*1000).toISOString() }}"
+        }
+      },
+      "id": "get-calendar",
+      "name": "Lire Calendrier (7 jours)",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 3,
+      "position": [420, 300],
+      "credentials": { "googleCalendarOAuth2Api": { "id": "VOTRE_CREDENTIAL_ID", "name": "Google Calendar OAuth2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Trouver les créneaux disponibles dans les 5 prochains jours ouvrés\nconst events = $input.all().map(i => i.json);\n\n// Config\nconst START_HOUR = 9;\nconst END_HOUR = 18;\nconst SLOT_DURATION = 30; // minutes\nconst DAYS_AHEAD = 5;\nconst TZ = 'Europe/Paris';\n\nconst slots = [];\nconst now = new Date();\n\nfor (let d = 1; d <= DAYS_AHEAD; d++) {\n  const date = new Date(now);\n  date.setDate(date.getDate() + d);\n  \n  // Skip weekends\n  if (date.getDay() === 0 || date.getDay() === 6) continue;\n  \n  for (let h = START_HOUR; h < END_HOUR; h++) {\n    for (let m = 0; m < 60; m += SLOT_DURATION) {\n      const slotStart = new Date(date);\n      slotStart.setHours(h, m, 0, 0);\n      const slotEnd = new Date(slotStart);\n      slotEnd.setMinutes(slotEnd.getMinutes() + SLOT_DURATION);\n      \n      // Vérifier si le créneau est libre\n      const isOccupied = events.some(e => {\n        const eStart = new Date(e.start?.dateTime || e.start?.date);\n        const eEnd = new Date(e.end?.dateTime || e.end?.date);\n        return slotStart < eEnd && slotEnd > eStart;\n      });\n      \n      if (!isOccupied) {\n        slots.push({\n          start: slotStart.toISOString(),\n          end: slotEnd.toISOString(),\n          label: slotStart.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) + ' à ' + slotStart.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })\n        });\n      }\n    }\n  }\n}\n\n// Retourner les 6 premiers créneaux\nreturn [{ json: { available_slots: slots.slice(0, 6) } }];"
+      },
+      "id": "find-slots",
+      "name": "Trouver Créneaux Libres",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "calendar": "primary",
+        "summary": "=Discovery Call — {{ $json.lead_name }} ({{ $json.company_name }})",
+        "start": "={{ $json.selected_slot_start }}",
+        "end": "={{ $json.selected_slot_end }}",
+        "additionalFields": {
+          "description": "RDV de découverte avec {{ $json.lead_name }} ({{ $json.job_title }} @ {{ $json.company_name }})\n\nEmail : {{ $json.lead_email }}\nSource : Prospection automatisée\n\nNotes :\n- Score lead : {{ $json.score }}\n- Angle : {{ $json.recommended_angle }}",
+          "attendees": [{ "email": "={{ $json.lead_email }}" }],
+          "conferenceData": {
+            "createRequest": {
+              "requestId": "=meeting-{{ $json.lead_id }}-{{ Date.now() }}",
+              "conferenceSolutionKey": { "type": "hangoutsMeet" }
+            }
+          },
+          "sendUpdates": "all"
+        }
+      },
+      "id": "create-event",
+      "name": "Créer Event Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 3,
+      "position": [860, 300],
+      "credentials": { "googleCalendarOAuth2Api": { "id": "VOTRE_CREDENTIAL_ID", "name": "Google Calendar OAuth2" } },
+      "notes": "Crée un Google Meet automatiquement. Le prospect reçoit l'invitation."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO meetings (lead_id, calendar_event_id, meeting_type, scheduled_at, duration_minutes, meeting_link, status) VALUES ({{ $json.lead_id }}, '{{ $json.event_id }}', 'discovery', '{{ $json.selected_slot_start }}', 30, '{{ $json.hangoutLink || '' }}', 'scheduled');\n\nUPDATE leads SET status = 'meeting_booked', updated_at = NOW(), next_followup_at = NULL WHERE id = {{ $json.lead_id }};\n\nINSERT INTO activity_log (lead_id, action, details) VALUES ({{ $json.lead_id }}, 'meeting_booked', '{\"type\": \"discovery\", \"date\": \"{{ $json.selected_slot_start }}\"}');",
+        "options": {}
+      },
+      "id": "save-meeting",
+      "name": "Sauvegarder RDV",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.lead_email }}",
+        "subject": "Confirmé — Notre call {{ new Date($json.selected_slot_start).toLocaleDateString('fr-FR', {weekday: 'long', day: 'numeric', month: 'long'}) }}",
+        "message": "={{ $json.lead_name.split(' ')[0] }},\n\nParfait, c'est noté !\n\nRDV {{ new Date($json.selected_slot_start).toLocaleDateString('fr-FR', {weekday: 'long', day: 'numeric', month: 'long'}) }} à {{ new Date($json.selected_slot_start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) }} (30 min).\n\nLien visio : {{ $json.hangoutLink || 'dans l\\'invitation Google Calendar' }}\n\nÀ tout bientôt,\n{{ $env.SENDER_NAME || 'Julien' }}",
+        "options": {}
+      },
+      "id": "confirm-email",
+      "name": "Email Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1320, 300],
+      "credentials": { "gmailOAuth2": { "id": "VOTRE_CREDENTIAL_ID", "name": "Gmail OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT m.*, l.first_name, l.last_name, l.email, l.company_name FROM meetings m JOIN leads l ON m.lead_id = l.id WHERE m.status = 'scheduled' AND m.scheduled_at BETWEEN NOW() AND NOW() + INTERVAL '24 hours';",
+        "options": {}
+      },
+      "id": "upcoming-meetings",
+      "name": "RDV dans 24h",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [420, 500],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Rappel — Notre call demain",
+        "message": "={{ $json.first_name }},\n\nPetit rappel pour notre call demain à {{ new Date($json.scheduled_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) }}.\n\nLien : {{ $json.meeting_link || 'dans l\\'invitation Calendar' }}\n\nÀ demain !\n{{ $env.SENDER_NAME || 'Julien' }}",
+        "options": {}
+      },
+      "id": "reminder-email",
+      "name": "Email Rappel J-1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [640, 500],
+      "credentials": { "gmailOAuth2": { "id": "VOTRE_CREDENTIAL_ID", "name": "Gmail OAuth2" } }
+    }
+  ],
+  "connections": {
+    "Webhook Booking": { "main": [[{ "node": "Lire Calendrier (7 jours)", "type": "main", "index": 0 }]] },
+    "Lire Calendrier (7 jours)": { "main": [[{ "node": "Trouver Créneaux Libres", "type": "main", "index": 0 }]] },
+    "Trouver Créneaux Libres": { "main": [[{ "node": "Créer Event Calendar", "type": "main", "index": 0 }]] },
+    "Créer Event Calendar": { "main": [[{ "node": "Sauvegarder RDV", "type": "main", "index": 0 }]] },
+    "Sauvegarder RDV": { "main": [[{ "node": "Email Confirmation", "type": "main", "index": 0 }]] },
+    "Vérif Quotidienne (8h)": { "main": [[{ "node": "RDV dans 24h", "type": "main", "index": 0 }]] },
+    "RDV dans 24h": { "main": [[{ "node": "Email Rappel J-1", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "instanceId": "b2b-prospecting-booking" }
+}

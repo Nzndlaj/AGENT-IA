@@ -1,0 +1,53 @@
+{
+  "prospecting": {
+    "company": {
+      "name": "VotreEntreprise",
+      "domain": "votreentreprise.com",
+      "offer_summary": "Nous automatisons la prospection commerciale B2B avec l'IA : leads qualifiés, messages personnalisés, RDV bookés automatiquement."
+    },
+    "sender": {
+      "name": "Julien Martin",
+      "title": "Growth Lead",
+      "email": "julien@votreentreprise.com",
+      "calendar_link": "https://calendly.com/julien-votreentreprise/15min"
+    },
+    "icp": {
+      "company_sizes": ["11-50", "51-200", "201-500"],
+      "industries": ["SaaS", "Agence digitale", "E-commerce", "Services B2B", "Conseil"],
+      "job_titles": ["CEO", "CMO", "Directeur Commercial", "Head of Growth", "VP Sales", "VP Marketing"],
+      "locations": ["France", "Belgique", "Suisse"],
+      "min_score": 40
+    },
+    "outreach": {
+      "daily_email_limit": 50,
+      "daily_linkedin_limit": 25,
+      "delay_between_emails_seconds": 60,
+      "followup_delays_days": [3, 7],
+      "max_followups": 2,
+      "send_window": {
+        "start_hour": 8,
+        "end_hour": 18,
+        "timezone": "Europe/Paris",
+        "days": ["monday", "tuesday", "wednesday", "thursday", "friday"]
+      }
+    },
+    "scoring": {
+      "hot_threshold": 70,
+      "warm_threshold": 40,
+      "auto_contact_min_score": 50
+    },
+    "rgpd": {
+      "data_retention_days": 365,
+      "opt_out_immediate": true,
+      "legitimate_interest_basis": "Prospection commerciale B2B (intérêt légitime art. 6.1.f RGPD)",
+      "include_unsubscribe_link": true,
+      "unsubscribe_text": "Si vous ne souhaitez plus recevoir mes messages, répondez simplement STOP."
+    },
+    "apis": {
+      "openai_model": "gpt-4o-mini",
+      "openai_temperature": 0.7,
+      "email_verification_provider": "zerobounce",
+      "enrichment_provider": "apollo"
+    }
+  }
+}

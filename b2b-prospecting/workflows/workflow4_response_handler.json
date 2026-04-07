@@ -1,0 +1,197 @@
+{
+  "name": "B2B Prospecting — 4. Gestion des Réponses",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "filters": { "readStatus": "unread" },
+        "options": { "maxResults": 20 }
+      },
+      "id": "gmail-trigger",
+      "name": "Nouvelles Réponses (Gmail)",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "credentials": { "gmailOAuth2": { "id": "VOTRE_CREDENTIAL_ID", "name": "Gmail OAuth2" } },
+      "notes": "Vérifie les nouveaux emails toutes les minutes. N8N gère le polling automatiquement."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT l.*, om.subject as original_subject, om.body as original_body, om.step_number FROM leads l JOIN outreach_messages om ON l.id = om.lead_id WHERE l.email = '{{ $json.from.value[0].address }}' AND om.direction = 'outbound' ORDER BY om.sent_at DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "find-lead",
+      "name": "Trouver le Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [420, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } },
+      "notes": "Cherche le lead correspondant à l'email reçu. Si pas trouvé = pas un prospect (ignorer)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            { "leftValue": "={{ $json.id }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty" } }
+          ]
+        }
+      },
+      "id": "is-known-lead",
+      "name": "Lead Connu ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Tu es un assistant commercial. Analyse cette réponse d'un prospect.\n\nClassifications : interested, meeting_request, more_info, not_now, not_interested, unsubscribe, out_of_office, refer, question.\n\nRÈGLES CRITIQUES :\n- Si le prospect dit \"STOP\", \"désinscrire\", \"retirer de la liste\" → unsubscribe (RGPD obligatoire)\n- Si doute → escalade humain\n- Confiance < 0.7 → ne pas auto-répondre\n\nRéponds en JSON :\n{\"intent\": \"...\", \"sentiment\": \"positive|neutral|negative\", \"can_auto_reply\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"...\", \"suggested_action\": \"...\", \"update_lead_status\": \"...\", \"schedule_followup_days\": null|number, \"escalate_to_human\": true/false}"
+            },
+            {
+              "role": "user",
+              "content": "Prospect : {{ $json.first_name }} {{ $json.last_name }} ({{ $json.job_title }} @ {{ $json.company_name }})\nNotre message : {{ $json.original_body }}\n\nSa réponse :\n\"\"\"{{ $('Nouvelles Réponses (Gmail)').item.json.text || $('Nouvelles Réponses (Gmail)').item.json.snippet }}\"\"\""
+            }
+          ]
+        },
+        "options": { "temperature": 0.3, "maxTokens": 300 }
+      },
+      "id": "gpt-analyze-reply",
+      "name": "GPT — Analyser Réponse",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [860, 200],
+      "credentials": { "openAiApi": { "id": "VOTRE_CREDENTIAL_ID", "name": "OpenAI API" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parser l'analyse GPT\nconst gpt = $input.first().json;\nconst lead = $('Trouver le Lead').first().json;\nconst reply = $('Nouvelles Réponses (Gmail)').first().json;\n\nlet analysis;\ntry {\n  const content = gpt.message?.content || gpt.choices?.[0]?.message?.content || '{}';\n  analysis = JSON.parse(content);\n} catch {\n  analysis = { intent: 'question', can_auto_reply: false, confidence: 0, escalate_to_human: true };\n}\n\nreturn [{\n  json: {\n    lead_id: lead.id,\n    lead_email: lead.email,\n    lead_name: `${lead.first_name} ${lead.last_name}`,\n    lead_company: lead.company_name,\n    reply_body: reply.text || reply.snippet || '',\n    reply_subject: reply.subject || '',\n    ...analysis\n  }\n}];"
+      },
+      "id": "parse-analysis",
+      "name": "Parser Analyse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 200]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputKey": "unsubscribe", "conditions": { "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "unsubscribe", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputKey": "auto_reply", "conditions": { "conditions": [{ "leftValue": "={{ $json.can_auto_reply }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] } },
+            { "outputKey": "escalate", "conditions": { "conditions": [{ "leftValue": "={{ $json.escalate_to_human }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] } }
+          ]
+        }
+      },
+      "id": "router",
+      "name": "Router Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1320, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET opt_out = TRUE, opt_out_date = NOW(), status = 'lost', updated_at = NOW(), next_followup_at = NULL WHERE id = {{ $json.lead_id }};\n\nINSERT INTO activity_log (lead_id, action, details) VALUES ({{ $json.lead_id }}, 'opt_out', '{\"reason\": \"prospect_request\", \"reply\": \"{{ $json.reply_body.replace(/'/g, \"''\").substring(0, 200) }}\"}');",
+        "options": {}
+      },
+      "id": "handle-unsubscribe",
+      "name": "RGPD — Désinscription",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 100],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } },
+      "notes": "Action immédiate RGPD : opt_out + suppression de toutes les séquences."
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Rédige une réponse courte (max 60 mots) à ce prospect. Ton naturel, comme un humain. Si il veut un RDV, propose des créneaux. Si il a une question, réponds et repose le CTA."
+            },
+            {
+              "role": "user",
+              "content": "Prospect : {{ $json.lead_name }} ({{ $json.lead_company }})\nSon intention : {{ $json.intent }}\nSa réponse : \"{{ $json.reply_body }}\"\n\nRéponds en JSON : {\"subject\": \"RE: ...\", \"body\": \"...\"}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.7, "maxTokens": 200 }
+      },
+      "id": "gpt-auto-reply",
+      "name": "GPT — Auto-Réponse",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [1560, 250],
+      "credentials": { "openAiApi": { "id": "VOTRE_CREDENTIAL_ID", "name": "OpenAI API" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Parser Analyse').item.json.lead_email }}",
+        "subject": "={{ JSON.parse($json.message.content).subject }}",
+        "message": "={{ JSON.parse($json.message.content).body }}",
+        "options": {}
+      },
+      "id": "send-auto-reply",
+      "name": "Envoyer Auto-Réponse",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 250],
+      "credentials": { "gmailOAuth2": { "id": "VOTRE_CREDENTIAL_ID", "name": "Gmail OAuth2" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.ALERT_EMAIL || $env.SENDER_EMAIL }}",
+        "subject": "🔔 Prospect à traiter : {{ $json.lead_name }} ({{ $json.lead_company }})",
+        "message": "Un prospect nécessite une intervention manuelle.\n\nProspect : {{ $json.lead_name }} — {{ $json.lead_company }}\nIntention détectée : {{ $json.intent }}\nSentiment : {{ $json.sentiment }}\nRaison escalade : {{ $json.reason }}\n\nSa réponse :\n{{ $json.reply_body }}\n\n---\nAction suggérée : {{ $json.suggested_action }}",
+        "options": {}
+      },
+      "id": "notify-human",
+      "name": "Notifier Humain",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 400],
+      "credentials": { "gmailOAuth2": { "id": "VOTRE_CREDENTIAL_ID", "name": "Gmail OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO outreach_messages (lead_id, channel, direction, subject, body, status, reply_sentiment, reply_intent, reply_body) VALUES ({{ $json.lead_id }}, 'email', 'inbound', '{{ $json.reply_subject }}', '{{ $json.reply_body.replace(/'/g, \"''\").substring(0, 1000) }}', 'received', '{{ $json.sentiment }}', '{{ $json.intent }}', '{{ $json.reply_body.replace(/'/g, \"''\").substring(0, 1000) }}');\n\nUPDATE leads SET status = '{{ $json.update_lead_status || 'replied' }}', updated_at = NOW(), next_followup_at = {{ $json.schedule_followup_days ? \"NOW() + INTERVAL '\" + $json.schedule_followup_days + \" days'\" : 'NULL' }} WHERE id = {{ $json.lead_id }};",
+        "options": {}
+      },
+      "id": "log-reply",
+      "name": "Logger Réponse + MAJ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2000, 300],
+      "credentials": { "postgres": { "id": "VOTRE_CREDENTIAL_ID", "name": "Postgres DB" } }
+    }
+  ],
+  "connections": {
+    "Nouvelles Réponses (Gmail)": { "main": [[{ "node": "Trouver le Lead", "type": "main", "index": 0 }]] },
+    "Trouver le Lead": { "main": [[{ "node": "Lead Connu ?", "type": "main", "index": 0 }]] },
+    "Lead Connu ?": { "main": [[{ "node": "GPT — Analyser Réponse", "type": "main", "index": 0 }], []] },
+    "GPT — Analyser Réponse": { "main": [[{ "node": "Parser Analyse", "type": "main", "index": 0 }]] },
+    "Parser Analyse": { "main": [[{ "node": "Router Action", "type": "main", "index": 0 }]] },
+    "Router Action": {
+      "main": [
+        [{ "node": "RGPD — Désinscription", "type": "main", "index": 0 }],
+        [{ "node": "GPT — Auto-Réponse", "type": "main", "index": 0 }],
+        [{ "node": "Notifier Humain", "type": "main", "index": 0 }]
+      ]
+    },
+    "GPT — Auto-Réponse": { "main": [[{ "node": "Envoyer Auto-Réponse", "type": "main", "index": 0 }]] },
+    "Envoyer Auto-Réponse": { "main": [[{ "node": "Logger Réponse + MAJ", "type": "main", "index": 0 }]] },
+    "RGPD — Désinscription": { "main": [[{ "node": "Logger Réponse + MAJ", "type": "main", "index": 0 }]] },
+    "Notifier Humain": { "main": [[{ "node": "Logger Réponse + MAJ", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "instanceId": "b2b-prospecting-responses" }
+}
