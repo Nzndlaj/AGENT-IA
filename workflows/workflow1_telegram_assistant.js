@@ -23,6 +23,34 @@
  *   3. System prompt: instruction explicite d'inclure l'URL image en markdown
  *   4. Modèle: gpt-4 → gpt-4o (correspondant au nom du noeud)
  *
+ * Fix v2 (2026-04-12):
+ *   5. Nouveau sous-workflow DALL-E 3 (ID: oFAryAKZmbyzuBTZ) remplace l'ancien
+ *      (K42AR1vlBO7XAgBc) qui était inaccessible/cassé. Le nouveau accepte un
+ *      input 'prompt', appelle l'API OpenAI DALL-E 3, retourne l'URL.
+ *      Voir: workflow4_dalle_subworkflow.js
+ *   6. Credential requise: "OpenAI Bearer" (httpBearerAuth) sur le sous-workflow
+ *
+ * ⚠️ LIMITATION SDK n8n:
+ *   Le SDK Workflow n8n fusionne les tool() sub-nodes du même type en un seul
+ *   noeud. Les 8 toolWorkflow sont collapsés en 1 "Tool Workflow" lors du
+ *   deploy via update_workflow. Il faut appliquer ces changements manuellement
+ *   dans l'UI n8n:
+ *
+ *   ÉTAPES POUR FIXER LA GÉNÉRATION D'IMAGES:
+ *   1. Dans n8n, ouvrir le workflow "CEO AI Agent - Principal"
+ *   2. Aller dans Versions → Restaurer la version d'avant le 12 avril 2026
+ *   3. Cliquer sur le noeud "Outil Generer Image" (toolWorkflow)
+ *   4. Changer le sous-workflow: sélectionner "🖼️ Sub-Workflow Générer Image
+ *      DALL-E 3" (ID: oFAryAKZmbyzuBTZ)
+ *   5. Dans "Workflow Inputs", ajouter le mapping:
+ *      prompt = {{ $fromAI('prompt', 'Detailed image description in English', 'string') }}
+ *   6. Aller dans le sous-workflow oFAryAKZmbyzuBTZ → noeud "Appel DALL-E 3 API"
+ *      → Configurer la credential "OpenAI Bearer" (HTTP Bearer Auth avec clé sk-...)
+ *   7. Dans le noeud "🔍 Vérifier Source Image" (chemin false/URL HTTP),
+ *      remplacer "📂 Lire Fichier Sandbox" par un noeud "HTTP Request" qui
+ *      télécharge l'image (GET, URL={{ $json.imageUrl }}, Response=File)
+ *   8. Activer le workflow
+ *
  * Variables d'environnement nécessaires:
  *   - TELEGRAM_BOT_TOKEN: token du bot Telegram (pour téléchargement audio)
  *
@@ -306,7 +334,7 @@ const imageGenTool = tool({
   name: 'Outil Generer Image',
   config: {
     description: "Générer une image avec DALL-E 3. Retourne l'URL. Inclus TOUJOURS l'URL en markdown: ![desc](URL)",
-    workflowId: { __rl: true, value: 'K42AR1vlBO7XAgBc', mode: 'list' },
+    workflowId: { __rl: true, value: 'oFAryAKZmbyzuBTZ', mode: 'list' },
     workflowInputs: {
       mappingMode: 'defineBelow',
       value: {
