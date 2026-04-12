@@ -24,32 +24,33 @@
  *   4. Modèle: gpt-4 → gpt-4o (correspondant au nom du noeud)
  *
  * Fix v2 (2026-04-12):
- *   5. Nouveau sous-workflow DALL-E 3 (ID: oFAryAKZmbyzuBTZ) remplace l'ancien
- *      (K42AR1vlBO7XAgBc) qui était inaccessible/cassé. Le nouveau accepte un
- *      input 'prompt', appelle l'API OpenAI DALL-E 3, retourne l'URL.
- *      Voir: workflow4_dalle_subworkflow.js
- *   6. Credential requise: "OpenAI Bearer" (httpBearerAuth) sur le sous-workflow
+ *   5. Workflow principal ACTIVÉ/PUBLIÉ (tous les outils fonctionnent sauf images)
+ *   6. Sous-workflow DALL-E 3 (oFAryAKZmbyzuBTZ) créé avec node OpenAI natif
+ *      et credential auto-assignée ("n8n free OpenAI API credits")
+ *   7. JSON d'import fourni: fix_dalle_subworkflow_import.json
  *
- * ⚠️ LIMITATION SDK n8n:
- *   Le SDK Workflow n8n fusionne les tool() sub-nodes du même type en un seul
- *   noeud. Les 8 toolWorkflow sont collapsés en 1 "Tool Workflow" lors du
- *   deploy via update_workflow. Il faut appliquer ces changements manuellement
- *   dans l'UI n8n:
+ * ⚠️ LIMITATIONS SDK n8n (bugs confirmés 2026-04-12):
+ *   A) Le SDK fusionne les tool() sub-nodes du même type en un seul noeud
+ *      (8 toolWorkflow → 1 "Tool Workflow"). Confirmé avec tool() ET node().
+ *   B) Le SDK NE PERSISTE PAS les paramètres des noeuds lors du deploy.
+ *      Les noeuds sont créés comme des coquilles vides (parameters: {}).
+ *      Seules les credentials auto-assignées, connexions et positions sont sauvées.
+ *   C) Le sous-workflow K42AR1vlBO7XAgBc a availableInMCP: false,
+ *      impossible de le lire, modifier ou exécuter via MCP.
  *
- *   ÉTAPES POUR FIXER LA GÉNÉRATION D'IMAGES:
- *   1. Dans n8n, ouvrir le workflow "CEO AI Agent - Principal"
- *   2. Aller dans Versions → Restaurer la version d'avant le 12 avril 2026
- *   3. Cliquer sur le noeud "Outil Generer Image" (toolWorkflow)
- *   4. Changer le sous-workflow: sélectionner "🖼️ Sub-Workflow Générer Image
- *      DALL-E 3" (ID: oFAryAKZmbyzuBTZ)
- *   5. Dans "Workflow Inputs", ajouter le mapping:
- *      prompt = {{ $fromAI('prompt', 'Detailed image description in English', 'string') }}
- *   6. Aller dans le sous-workflow oFAryAKZmbyzuBTZ → noeud "Appel DALL-E 3 API"
- *      → Configurer la credential "OpenAI Bearer" (HTTP Bearer Auth avec clé sk-...)
- *   7. Dans le noeud "🔍 Vérifier Source Image" (chemin false/URL HTTP),
- *      remplacer "📂 Lire Fichier Sandbox" par un noeud "HTTP Request" qui
- *      télécharge l'image (GET, URL={{ $json.imageUrl }}, Response=File)
- *   8. Activer le workflow
+ * ⚠️ FIX MANUEL REQUIS (1 seul changement dans n8n UI):
+ *   Le noeud "Outil Generer Image1" a des workflowInputs VIDES.
+ *   L'agent IA ne passe donc aucun prompt au sous-workflow DALL-E.
+ *
+ *   ÉTAPE 1: Ouvrir le workflow "CEO AI Agent - Principal" dans n8n
+ *   ÉTAPE 2: Cliquer sur "Outil Generer Image1" (toolWorkflow)
+ *   ÉTAPE 3: Dans "Workflow Inputs", ajouter un champ:
+ *            Nom:    prompt
+ *            Valeur: {{ $fromAI('prompt', 'Detailed image description in English', 'string') }}
+ *   ÉTAPE 4: (Optionnel) Changer le sous-workflow vers le nouveau:
+ *            Sélectionner "🖼️ Générer Image DALL-E 3" importé depuis
+ *            fix_dalle_subworkflow_import.json
+ *   ÉTAPE 5: Sauvegarder
  *
  * Variables d'environnement nécessaires:
  *   - TELEGRAM_BOT_TOKEN: token du bot Telegram (pour téléchargement audio)

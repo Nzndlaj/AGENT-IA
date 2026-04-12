@@ -1,0 +1,72 @@
+{
+  "name": "🖼️ Générer Image DALL-E 3",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            { "name": "prompt", "type": "string" }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Recevoir Prompt",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "generate",
+        "model": "dall-e-3",
+        "prompt": "={{ $json.prompt }}",
+        "options": {
+          "dalleQuality": "standard",
+          "size": "1024x1024",
+          "style": "vivid",
+          "returnImageUrls": true
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Générer Image DALL-E 3",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [500, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\n// Handle both returnImageUrls=true format and raw API format\nconst url = data.url || (data.data && data.data[0] ? data.data[0].url : '');\nconst revisedPrompt = data.revised_prompt || (data.data && data.data[0] ? data.data[0].revised_prompt : '');\nif (!url) {\n  return { json: { response: 'Erreur: impossible de générer image.' } };\n}\nreturn {\n  json: {\n    response: 'Image générée avec succès! Voici le lien: ' + url,\n    imageUrl: url,\n    revisedPrompt: revisedPrompt\n  }\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "Formater Réponse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    }
+  ],
+  "connections": {
+    "Recevoir Prompt": {
+      "main": [
+        [{ "node": "Générer Image DALL-E 3", "type": "main", "index": 0 }]
+      ]
+    },
+    "Générer Image DALL-E 3": {
+      "main": [
+        [{ "node": "Formater Réponse", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
