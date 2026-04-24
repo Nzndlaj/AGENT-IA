@@ -1,5 +1,5 @@
 {
-  "name": "AGENT-IA - Assistant Telegram avec Photos",
+  "name": "🤖 AGENT-IA - Assistant Telegram Ultra-Avancé",
   "nodes": [
     {
       "parameters": {
@@ -28,8 +28,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict",
-            "version": 1
+            "typeValidation": "strict"
           },
           "conditions": [
             {
@@ -47,7 +46,7 @@
         "options": {}
       },
       "id": "074e1128-c23c-4574-bf61-c36a4e378175",
-      "name": "Est Message Vocal",
+      "name": "If",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [336, 288]
@@ -56,15 +55,16 @@
       "parameters": {
         "resource": "audio",
         "operation": "transcribe",
+        "binaryPropertyName": "data",
         "options": {
           "language": "fr"
         }
       },
       "id": "d91f7a00-2dbe-4aa3-b6ba-5399e57ac4f8",
-      "name": "Transcrire Audio",
+      "name": "Open Ai",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 2.1,
-      "position": [560, 192],
+      "position": [560, 160],
       "credentials": {
         "openAiApi": {
           "id": "",
@@ -111,34 +111,35 @@
         "options": {}
       },
       "id": "af4d6b01-ad14-4fb2-9731-7275b87af1ab",
-      "name": "Donnees Vocale",
+      "name": "Set",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [784, 192]
+      "position": [784, 160]
     },
     {
       "parameters": {
-        "jsCode": "const msg = $input.item.json.message;\nlet inputText = '';\nlet inputType = 'text';\nif (msg.photo && msg.photo.length > 0) {\n  inputType = 'photo';\n  inputText = '[IMAGE RECUE] ' + (msg.caption || 'Analysez cette image en detail');\n} else {\n  inputType = 'text';\n  inputText = msg.text || msg.caption || 'Message vide';\n}\nreturn [{ json: {\n  inputText, inputType,\n  chatId: msg.chat.id.toString(),\n  userId: msg.from.id.toString(),\n  username: msg.from.first_name || 'Utilisateur'\n}}];"
+        "mode": "runOnceForAllItems",
+        "jsCode": "const msg = $input.item.json.message;\nlet inputText = '';\nlet inputType = 'text';\nif (msg.photo && msg.photo.length > 0) {\n  inputType = 'photo';\n  inputText = '[IMAGE REÇUE] ' + (msg.caption || 'Analysez cette image en détail');\n} else {\n  inputType = 'text';\n  inputText = msg.text || msg.caption || 'Message vide';\n}\nreturn [{ json: {\n  inputText, inputType,\n  chatId: msg.chat.id.toString(),\n  userId: msg.from.id.toString(),\n  username: msg.from.first_name || 'Utilisateur'\n}}];"
       },
       "id": "1bde5401-3317-4c6b-8dec-1a5b4c0c73b2",
-      "name": "Router Message",
+      "name": "Code",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [784, 384]
+      "position": [560, 416]
     },
     {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.inputText }}",
         "options": {
-          "systemMessage": "Tu es AGENT-IA, un assistant personnel ultra-avance parlant francais.\nTu as acces aux outils suivants:\n- Envoyer Email: envoie des emails via Gmail\n- Lire Emails: lit les emails Gmail\n- Voir Agenda: consulte Google Calendar\n- Creer Evenement: ajoute un evenement au calendrier\n- Chercher Contact: recherche dans la base de donnees\n- Actualites News: recupere les dernieres nouvelles\n- Generer Image DALL-E: cree des images avec DALL-E 3\n\nIMPORTANT: Quand tu generes une image avec DALL-E, inclus l URL complete de l image dans ta reponse, elle sera automatiquement envoyee comme photo.\n\nReponds TOUJOURS en francais. Sois concis, precis et utile. Utilise des emojis."
+          "systemMessage": "Tu es AGENT-IA, un assistant personnel ultra-avancé parlant français.\nTu as accès aux outils suivants:\n- Envoyer Email: envoie des emails via Gmail\n- Lire Emails: lit les emails Gmail\n- Voir Agenda: consulte Google Calendar\n- Créer Événement: ajoute un événement au calendrier\n- Chercher Contact: recherche dans la base de données\n- Actualités News: récupère les dernières nouvelles\n- Recherche Web: recherche des informations actuelles sur internet\n- Générer Image DALL-E: crée des images avec DALL-E 3\n\nIMPORTANT: Quand tu utilises l'outil Générer Image DALL-E et qu'il retourne une URL, tu DOIS inclure cette URL exacte et complète dans ta réponse. Elle sera automatiquement envoyée comme photo Telegram.\n\nRéponds TOUJOURS en français. Sois concis, précis et utile. Utilise des émojis."
         }
       },
       "id": "69c47666-e6ea-4d14-b625-cf16bdea1e70",
-      "name": "AGENT-IA",
+      "name": "Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
-      "position": [1448, 288]
+      "position": [980, 288]
     },
     {
       "parameters": {
@@ -152,10 +153,10 @@
         }
       },
       "id": "69098b23-08b5-4837-ba8e-e8f86f3cb51e",
-      "name": "GPT-4o",
+      "name": "LM Chat Open Ai",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
-      "position": [1008, 512],
+      "position": [700, 512],
       "credentials": {
         "openAiApi": {
           "id": "",
@@ -171,10 +172,10 @@
         "contextWindowLength": 20
       },
       "id": "a1ef888b-b344-4f86-b067-3de18e3820c7",
-      "name": "Memoire Conversation",
+      "name": "Memory Postgres Chat",
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1.3,
-      "position": [1136, 512],
+      "position": [840, 512],
       "credentials": {
         "postgres": {
           "id": "",
@@ -190,10 +191,10 @@
         "options": {}
       },
       "id": "25d82ee7-7cd4-4136-88cc-18dd92bbb92c",
-      "name": "Envoyer Email",
+      "name": "Gmail Tool",
       "type": "n8n-nodes-base.gmailTool",
       "typeVersion": 2.2,
-      "position": [1264, 512],
+      "position": [980, 512],
       "webhookId": "bbd516e0-032e-44ed-83a6-82a382cfb68c",
       "credentials": {
         "gmailOAuth2": {
@@ -204,15 +205,17 @@
     },
     {
       "parameters": {
+        "resource": "message",
         "operation": "getAll",
+        "returnAll": false,
         "limit": 10,
         "filters": {}
       },
       "id": "bf1d5aea-afd2-477c-b015-ed8560afee16",
-      "name": "Lire Emails",
+      "name": "Gmail Tool1",
       "type": "n8n-nodes-base.gmailTool",
       "typeVersion": 2.2,
-      "position": [1392, 512],
+      "position": [1120, 512],
       "webhookId": "84940e7c-f048-444d-bb83-3ba85b81568d",
       "credentials": {
         "gmailOAuth2": {
@@ -223,20 +226,22 @@
     },
     {
       "parameters": {
+        "resource": "event",
         "operation": "getAll",
         "calendar": {
           "__rl": true,
           "mode": "list",
           "value": "primary"
         },
+        "returnAll": false,
         "limit": 20,
         "options": {}
       },
       "id": "818e4af4-f434-4ee0-88e0-1c3617e2aca3",
-      "name": "Voir Agenda",
+      "name": "Google Calendar Tool",
       "type": "n8n-nodes-base.googleCalendarTool",
       "typeVersion": 1.3,
-      "position": [1520, 512],
+      "position": [1260, 512],
       "credentials": {
         "googleCalendarOAuth2Api": {
           "id": "",
@@ -246,6 +251,8 @@
     },
     {
       "parameters": {
+        "resource": "event",
+        "operation": "create",
         "calendar": {
           "__rl": true,
           "mode": "list",
@@ -259,10 +266,10 @@
         }
       },
       "id": "5d0063a4-c457-4764-b76c-48af4cdb66f2",
-      "name": "Creer Evenement",
+      "name": "Google Calendar Tool1",
       "type": "n8n-nodes-base.googleCalendarTool",
       "typeVersion": 1.3,
-      "position": [1648, 512],
+      "position": [1400, 512],
       "credentials": {
         "googleCalendarOAuth2Api": {
           "id": "",
@@ -277,10 +284,10 @@
         "options": {}
       },
       "id": "fd8bc7db-435a-4ad4-987b-2fc6922cd4a9",
-      "name": "Chercher Contact",
+      "name": "Postgres Tool",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
-      "position": [1776, 512],
+      "position": [1540, 512],
       "credentials": {
         "postgres": {
           "id": "",
@@ -315,10 +322,10 @@
         "options": {}
       },
       "id": "a2dfee86-c50b-4bb5-83c3-9151f49224b2",
-      "name": "Actualites News",
+      "name": "Http Request Tool",
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.4,
-      "position": [1904, 512]
+      "position": [1680, 512]
     },
     {
       "parameters": {
@@ -327,15 +334,16 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpBearerAuth",
         "sendBody": true,
+        "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'dall-e-3', prompt: $fromAI('prompt', 'Detailed image description in English', 'string'), n: 1, size: '1024x1024' }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'dall-e-3', prompt: $fromAI('prompt', 'Detailed image description in English', 'string'), n: 1, size: '1024x1024', response_format: 'url' }) }}",
         "options": {}
       },
       "id": "01657135-2fbe-4f2e-b467-86a36f5322d6",
-      "name": "Generer Image DALL-E",
+      "name": "Http Request Tool1",
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.4,
-      "position": [2032, 512],
+      "position": [1820, 512],
       "credentials": {
         "httpBearerAuth": {
           "id": "",
@@ -345,13 +353,33 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.item.json;\nconst output = item.output || '';\n\nlet chatId = '';\ntry { chatId = $('Donnees Vocale').item.json.chatId; } catch(e) {}\nif (!chatId) { try { chatId = $('Router Message').item.json.chatId; } catch(e) {} }\n\nconst dalleRegex = /https?:\\/\\/oaidalleapiprodscus\\.blob\\.core\\.windows\\.net\\/[^\\s<>\"\\)]+/gi;\nconst imgRegex = /https?:\\/\\/[^\\s<>\"\\)]+\\.(?:png|jpg|jpeg|gif|webp)(?:\\?[^\\s<>\"\\)]*)?/gi;\n\nconst dalleMatches = output.match(dalleRegex);\nconst imgMatches = output.match(imgRegex);\n\nlet imageUrl = null;\nif (dalleMatches && dalleMatches.length > 0) imageUrl = dalleMatches[0];\nelse if (imgMatches && imgMatches.length > 0) imageUrl = imgMatches[0];\n\nlet caption = output.replace(dalleRegex, '').replace(imgRegex, '').replace(/\\n{3,}/g, '\\n\\n').trim();\nif (!caption) caption = 'Image generee par DALL-E 3';\nif (caption.length > 1024) caption = caption.substring(0, 1021) + '...';\n\nreturn [{ json: { output, imageUrl, hasImage: imageUrl !== null, caption, chatId } }];"
+        "options": {
+          "gl": "fr",
+          "hl": "fr"
+        }
       },
-      "id": "3ebc7b1e-6335-4002-a30b-5c1745fceaa1",
+      "id": "serpapi-tool-001",
+      "name": "SerpApi",
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [1960, 512],
+      "credentials": {
+        "serpApi": {
+          "id": "",
+          "name": "SerpAPI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const item = $input.item.json;\nconst output = item.output || '';\n\n// Récupérer le chatId depuis les noeuds précédents\nlet chatId = '';\ntry { chatId = $('Set').item.json.chatId; } catch(e) {}\nif (!chatId) { try { chatId = $('Code').item.json.chatId; } catch(e) {} }\n\n// Regex pour détecter les URLs DALL-E (OpenAI Azure CDN)\nconst dalleRegex = /https?:\\/\\/oaidalleapiprodscus\\.blob\\.core\\.windows\\.net\\/[^\\s<>\"'\\)\\]]+/gi;\n// Regex pour détecter toute URL d'image générique\nconst imgRegex = /https?:\\/\\/[^\\s<>\"'\\)\\]]+\\.(?:png|jpg|jpeg|gif|webp)(?:[?#][^\\s<>\"'\\)\\]]*)?/gi;\n\nconst dalleMatches = output.match(dalleRegex);\nconst imgMatches = output.match(imgRegex);\n\nlet imageUrl = null;\nif (dalleMatches && dalleMatches.length > 0) {\n  imageUrl = dalleMatches[0];\n} else if (imgMatches && imgMatches.length > 0) {\n  imageUrl = imgMatches[0];\n}\n\n// Construire la légende: texte sans l'URL\nlet caption = output\n  .replace(dalleRegex, '')\n  .replace(imgRegex, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nif (!caption || caption.length < 3) {\n  caption = '🎨 Image générée par DALL-E 3';\n}\nif (caption.length > 1024) {\n  caption = caption.substring(0, 1021) + '...';\n}\n\nreturn [{ json: {\n  output,\n  imageUrl,\n  hasImage: imageUrl !== null,\n  caption,\n  chatId\n} }];"
+      },
+      "id": "detect-image-001",
       "name": "Detecter Image",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2240, 288]
+      "position": [1200, 288]
     },
     {
       "parameters": {
@@ -359,8 +387,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict",
-            "version": 1
+            "typeValidation": "strict"
           },
           "conditions": [
             {
@@ -377,28 +404,29 @@
         },
         "options": {}
       },
-      "id": "febf31c0-d0c4-4b5b-bdaa-c48079d92486",
-      "name": "Contient Image",
+      "id": "if-image-001",
+      "name": "If1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [2464, 288]
+      "position": [1420, 288]
     },
     {
       "parameters": {
+        "resource": "message",
         "operation": "sendPhoto",
         "chatId": "={{ $json.chatId }}",
+        "binaryData": false,
         "file": "={{ $json.imageUrl }}",
         "additionalFields": {
           "caption": "={{ $json.caption }}",
           "parse_mode": "Markdown"
         }
       },
-      "id": "cc6615eb-762a-409e-b85a-f530da9ceafe",
-      "name": "Envoyer Photo",
+      "id": "send-photo-001",
+      "name": "Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [2688, 192],
-      "webhookId": "42b7db70-56d7-4df0-80ff-70e0bf3c2ecc",
+      "position": [1640, 192],
       "credentials": {
         "telegramApi": {
           "id": "",
@@ -408,19 +436,20 @@
     },
     {
       "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
         "chatId": "={{ $json.chatId }}",
         "text": "={{ $json.output }}",
         "additionalFields": {
-          "disable_web_page_preview": true,
-          "parse_mode": "Markdown"
+          "parse_mode": "Markdown",
+          "disable_web_page_preview": true
         }
       },
-      "id": "17bbdb5c-a4d1-44a3-8868-bca2f0dd976f",
-      "name": "Envoyer Texte",
+      "id": "send-text-001",
+      "name": "Telegram1",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [2688, 384],
-      "webhookId": "81523f5a-c99f-4586-a911-c7da66b53418",
+      "position": [1640, 384],
       "credentials": {
         "telegramApi": {
           "id": "",
@@ -434,65 +463,65 @@
       "main": [
         [
           {
-            "node": "Est Message Vocal",
+            "node": "If",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Est Message Vocal": {
+    "If": {
       "main": [
         [
           {
-            "node": "Transcrire Audio",
+            "node": "Open Ai",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Router Message",
+            "node": "Code",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Transcrire Audio": {
+    "Open Ai": {
       "main": [
         [
           {
-            "node": "Donnees Vocale",
+            "node": "Set",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Donnees Vocale": {
+    "Set": {
       "main": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Router Message": {
+    "Code": {
       "main": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "AGENT-IA": {
+    "Agent": {
       "main": [
         [
           {
@@ -503,99 +532,110 @@
         ]
       ]
     },
-    "GPT-4o": {
+    "LM Chat Open Ai": {
       "ai_languageModel": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_languageModel",
             "index": 0
           }
         ]
       ]
     },
-    "Memoire Conversation": {
+    "Memory Postgres Chat": {
       "ai_memory": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_memory",
             "index": 0
           }
         ]
       ]
     },
-    "Envoyer Email": {
+    "Gmail Tool": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Lire Emails": {
+    "Gmail Tool1": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Voir Agenda": {
+    "Google Calendar Tool": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Creer Evenement": {
+    "Google Calendar Tool1": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Chercher Contact": {
+    "Postgres Tool": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Actualites News": {
+    "Http Request Tool": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Generer Image DALL-E": {
+    "Http Request Tool1": {
       "ai_tool": [
         [
           {
-            "node": "AGENT-IA",
+            "node": "Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpApi": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent",
             "type": "ai_tool",
             "index": 0
           }
@@ -606,25 +646,25 @@
       "main": [
         [
           {
-            "node": "Contient Image",
+            "node": "If1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Contient Image": {
+    "If1": {
       "main": [
         [
           {
-            "node": "Envoyer Photo",
+            "node": "Telegram",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Envoyer Texte",
+            "node": "Telegram1",
             "type": "main",
             "index": 0
           }
@@ -636,7 +676,6 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "",
   "meta": {
     "instanceId": ""
   },
