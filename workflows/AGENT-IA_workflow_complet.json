@@ -13,7 +13,7 @@
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.2,
-      "position": [112, 288],
+      "position": [100, 300],
       "webhookId": "6c7d12ab-1cb9-4be8-9d62-0769665f8592",
       "credentials": {
         "telegramApi": {
@@ -28,7 +28,8 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 1
           },
           "conditions": [
             {
@@ -49,7 +50,7 @@
       "name": "If",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [336, 288]
+      "position": [320, 300]
     },
     {
       "parameters": {
@@ -64,13 +65,7 @@
       "name": "Open Ai",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 2.1,
-      "position": [560, 160],
-      "credentials": {
-        "openAiApi": {
-          "id": "",
-          "name": "OpenAI API"
-        }
-      }
+      "position": [540, 180]
     },
     {
       "parameters": {
@@ -93,18 +88,6 @@
               "name": "chatId",
               "value": "={{ $('Telegram Trigger').item.json.message.chat.id.toString() }}",
               "type": "string"
-            },
-            {
-              "id": "4",
-              "name": "userId",
-              "value": "={{ $('Telegram Trigger').item.json.message.from.id.toString() }}",
-              "type": "string"
-            },
-            {
-              "id": "5",
-              "name": "username",
-              "value": "={{ $('Telegram Trigger').item.json.message.from.first_name || 'User' }}",
-              "type": "string"
             }
           ]
         },
@@ -114,32 +97,35 @@
       "name": "Set",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [784, 160]
+      "position": [760, 180]
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const msg = $input.item.json.message;\nlet inputText = '';\nlet inputType = 'text';\nif (msg.photo && msg.photo.length > 0) {\n  inputType = 'photo';\n  inputText = '[IMAGE REÇUE] ' + (msg.caption || 'Analysez cette image en détail');\n} else {\n  inputType = 'text';\n  inputText = msg.text || msg.caption || 'Message vide';\n}\nreturn [{ json: {\n  inputText, inputType,\n  chatId: msg.chat.id.toString(),\n  userId: msg.from.id.toString(),\n  username: msg.from.first_name || 'Utilisateur'\n}}];"
+        "jsCode": "const msg = $input.item.json.message;\nlet inputText = '';\nlet inputType = 'text';\nif (msg.photo && msg.photo.length > 0) {\n  inputType = 'photo';\n  inputText = '[IMAGE REÇUE] ' + (msg.caption || 'Analysez cette image en détail');\n} else {\n  inputType = 'text';\n  inputText = msg.text || msg.caption || 'Message vide';\n}\nreturn [{ json: {\n  inputText,\n  inputType,\n  chatId: msg.chat.id.toString()\n}}];"
       },
       "id": "1bde5401-3317-4c6b-8dec-1a5b4c0c73b2",
       "name": "Code",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [560, 416]
+      "position": [540, 420]
     },
     {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.inputText }}",
         "options": {
-          "systemMessage": "Tu es AGENT-IA, un assistant personnel ultra-avancé parlant français.\nTu as accès aux outils suivants:\n- Envoyer Email: envoie des emails via Gmail\n- Lire Emails: lit les emails Gmail\n- Voir Agenda: consulte Google Calendar\n- Créer Événement: ajoute un événement au calendrier\n- Chercher Contact: recherche dans la base de données\n- Actualités News: récupère les dernières nouvelles\n- Recherche Web: recherche des informations actuelles sur internet\n- Générer Image DALL-E: crée des images avec DALL-E 3\n\nIMPORTANT: Quand tu utilises l'outil Générer Image DALL-E et qu'il retourne une URL, tu DOIS inclure cette URL exacte et complète dans ta réponse. Elle sera automatiquement envoyée comme photo Telegram.\n\nRéponds TOUJOURS en français. Sois concis, précis et utile. Utilise des émojis."
+          "systemMessage": "Tu es AGENT-IA, un assistant personnel ultra-avancé parlant français.\n\nOutils disponibles:\n- Envoyer_Email: envoie des emails via Gmail\n- Lire_Emails: lit les emails Gmail\n- Voir_Agenda: consulte Google Calendar\n- Creer_Evenement: ajoute un événement au calendrier\n- Chercher_Contact: recherche dans la base de données contacts\n- Actualites_News: récupère les dernières nouvelles\n- Recherche_Web: recherche Google en temps réel\n- Generer_Image: crée une image avec DALL-E 3\n\nQuand tu utilises Generer_Image, tu reçois un JSON contenant `data[0].url`. Tu DOIS recopier cette URL complète et exacte dans ta réponse finale (ex: \"Voici votre image: https://oaidalleapiprodscus.blob.core.windows.net/...\"). Elle sera automatiquement convertie en photo Telegram.\n\nRéponds TOUJOURS en français. Sois concis, précis et utilise des émojis.",
+          "returnIntermediateSteps": true,
+          "enableStreaming": false,
+          "maxIterations": 10
         }
       },
       "id": "69c47666-e6ea-4d14-b625-cf16bdea1e70",
       "name": "Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
-      "position": [980, 288]
+      "position": [980, 300]
     },
     {
       "parameters": {
@@ -156,7 +142,7 @@
       "name": "LM Chat Open Ai",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
-      "position": [700, 512],
+      "position": [700, 520],
       "credentials": {
         "openAiApi": {
           "id": "",
@@ -175,7 +161,7 @@
       "name": "Memory Postgres Chat",
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1.3,
-      "position": [840, 512],
+      "position": [840, 520],
       "credentials": {
         "postgres": {
           "id": "",
@@ -185,16 +171,18 @@
     },
     {
       "parameters": {
-        "sendTo": "={{ $fromAI('to', 'Email recipient', 'string') }}",
+        "descriptionType": "manual",
+        "toolDescription": "Envoie un email via Gmail",
+        "sendTo": "={{ $fromAI('to', 'Email recipient address', 'string') }}",
         "subject": "={{ $fromAI('subject', 'Email subject', 'string') }}",
         "message": "={{ $fromAI('body', 'Email body content', 'string') }}",
         "options": {}
       },
       "id": "25d82ee7-7cd4-4136-88cc-18dd92bbb92c",
-      "name": "Gmail Tool",
+      "name": "Envoyer_Email",
       "type": "n8n-nodes-base.gmailTool",
       "typeVersion": 2.2,
-      "position": [980, 512],
+      "position": [980, 520],
       "webhookId": "bbd516e0-032e-44ed-83a6-82a382cfb68c",
       "credentials": {
         "gmailOAuth2": {
@@ -205,6 +193,8 @@
     },
     {
       "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Liste les emails Gmail récents",
         "resource": "message",
         "operation": "getAll",
         "returnAll": false,
@@ -212,10 +202,10 @@
         "filters": {}
       },
       "id": "bf1d5aea-afd2-477c-b015-ed8560afee16",
-      "name": "Gmail Tool1",
+      "name": "Lire_Emails",
       "type": "n8n-nodes-base.gmailTool",
       "typeVersion": 2.2,
-      "position": [1120, 512],
+      "position": [1120, 520],
       "webhookId": "84940e7c-f048-444d-bb83-3ba85b81568d",
       "credentials": {
         "gmailOAuth2": {
@@ -226,6 +216,8 @@
     },
     {
       "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Consulte les événements du Google Calendar",
         "resource": "event",
         "operation": "getAll",
         "calendar": {
@@ -238,10 +230,10 @@
         "options": {}
       },
       "id": "818e4af4-f434-4ee0-88e0-1c3617e2aca3",
-      "name": "Google Calendar Tool",
+      "name": "Voir_Agenda",
       "type": "n8n-nodes-base.googleCalendarTool",
       "typeVersion": 1.3,
-      "position": [1260, 512],
+      "position": [1260, 520],
       "credentials": {
         "googleCalendarOAuth2Api": {
           "id": "",
@@ -251,6 +243,8 @@
     },
     {
       "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Crée un événement dans le Google Calendar",
         "resource": "event",
         "operation": "create",
         "calendar": {
@@ -266,10 +260,10 @@
         }
       },
       "id": "5d0063a4-c457-4764-b76c-48af4cdb66f2",
-      "name": "Google Calendar Tool1",
+      "name": "Creer_Evenement",
       "type": "n8n-nodes-base.googleCalendarTool",
       "typeVersion": 1.3,
-      "position": [1400, 512],
+      "position": [1400, 520],
       "credentials": {
         "googleCalendarOAuth2Api": {
           "id": "",
@@ -279,15 +273,17 @@
     },
     {
       "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Recherche des contacts dans la base Postgres",
         "operation": "executeQuery",
         "query": "={{ 'SELECT * FROM contacts WHERE name ILIKE \\'%' + $fromAI('search', 'Name or email to search', 'string') + '%\\' LIMIT 10' }}",
         "options": {}
       },
       "id": "fd8bc7db-435a-4ad4-987b-2fc6922cd4a9",
-      "name": "Postgres Tool",
+      "name": "Chercher_Contact",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
-      "position": [1540, 512],
+      "position": [1540, 520],
       "credentials": {
         "postgres": {
           "id": "",
@@ -297,6 +293,7 @@
     },
     {
       "parameters": {
+        "toolDescription": "Récupère les dernières actualités via NewsAPI",
         "url": "https://newsapi.org/v2/top-headlines",
         "sendQuery": true,
         "queryParameters": {
@@ -322,13 +319,14 @@
         "options": {}
       },
       "id": "a2dfee86-c50b-4bb5-83c3-9151f49224b2",
-      "name": "Http Request Tool",
+      "name": "Actualites_News",
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.4,
-      "position": [1680, 512]
+      "position": [1680, 520]
     },
     {
       "parameters": {
+        "toolDescription": "Génère une image avec DALL-E 3. Retourne un JSON avec data[0].url contenant l'URL de l'image",
         "method": "POST",
         "url": "https://api.openai.com/v1/images/generations",
         "authentication": "genericCredentialType",
@@ -340,10 +338,10 @@
         "options": {}
       },
       "id": "01657135-2fbe-4f2e-b467-86a36f5322d6",
-      "name": "Http Request Tool1",
+      "name": "Generer_Image",
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.4,
-      "position": [1820, 512],
+      "position": [1820, 520],
       "credentials": {
         "httpBearerAuth": {
           "id": "",
@@ -359,10 +357,10 @@
         }
       },
       "id": "serpapi-tool-001",
-      "name": "SerpApi",
+      "name": "Recherche_Web",
       "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
       "typeVersion": 1,
-      "position": [1960, 512],
+      "position": [1960, 520],
       "credentials": {
         "serpApi": {
           "id": "",
@@ -373,13 +371,13 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const item = $input.item.json;\nconst output = item.output || '';\n\n// Récupérer le chatId depuis les noeuds précédents\nlet chatId = '';\ntry { chatId = $('Set').item.json.chatId; } catch(e) {}\nif (!chatId) { try { chatId = $('Code').item.json.chatId; } catch(e) {} }\n\n// Regex pour détecter les URLs DALL-E (OpenAI Azure CDN)\nconst dalleRegex = /https?:\\/\\/oaidalleapiprodscus\\.blob\\.core\\.windows\\.net\\/[^\\s<>\"'\\)\\]]+/gi;\n// Regex pour détecter toute URL d'image générique\nconst imgRegex = /https?:\\/\\/[^\\s<>\"'\\)\\]]+\\.(?:png|jpg|jpeg|gif|webp)(?:[?#][^\\s<>\"'\\)\\]]*)?/gi;\n\nconst dalleMatches = output.match(dalleRegex);\nconst imgMatches = output.match(imgRegex);\n\nlet imageUrl = null;\nif (dalleMatches && dalleMatches.length > 0) {\n  imageUrl = dalleMatches[0];\n} else if (imgMatches && imgMatches.length > 0) {\n  imageUrl = imgMatches[0];\n}\n\n// Construire la légende: texte sans l'URL\nlet caption = output\n  .replace(dalleRegex, '')\n  .replace(imgRegex, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nif (!caption || caption.length < 3) {\n  caption = '🎨 Image générée par DALL-E 3';\n}\nif (caption.length > 1024) {\n  caption = caption.substring(0, 1021) + '...';\n}\n\nreturn [{ json: {\n  output,\n  imageUrl,\n  hasImage: imageUrl !== null,\n  caption,\n  chatId\n} }];"
+        "jsCode": "// ============================================================\n// DETECTER IMAGE ET PREPARER SORTIE TELEGRAM\n// ============================================================\n\nconst item = $input.item.json;\nconst output = String(item.output || '').trim();\nconst intermediateSteps = Array.isArray(item.intermediateSteps) ? item.intermediateSteps : [];\n\n// --- 1) Récupérer chatId depuis Telegram Trigger (toujours fiable) ---\nlet chatId = '';\ntry {\n  chatId = $('Telegram Trigger').item.json.message.chat.id.toString();\n} catch (e) {\n  chatId = '';\n}\n\n// --- 2) Extraire l'URL DALL-E ---\nlet imageUrl = null;\n\n// Stratégie A: parser les intermediateSteps (appels d'outils de l'agent)\nfor (const step of intermediateSteps) {\n  const toolName = (step.action && step.action.tool) ? String(step.action.tool) : '';\n  const obs = step.observation;\n  if (!obs) continue;\n  \n  // Tenter parse JSON pour trouver data[0].url\n  try {\n    const parsed = typeof obs === 'string' ? JSON.parse(obs) : obs;\n    if (parsed && parsed.data && Array.isArray(parsed.data) && parsed.data[0] && parsed.data[0].url) {\n      imageUrl = parsed.data[0].url;\n      break;\n    }\n  } catch (e) {\n    // Pas du JSON, extraire URL par regex\n    const m = String(obs).match(/https?:\\/\\/oaidalleapiprodscus\\.blob\\.core\\.windows\\.net\\/[^\\s\"'\\)\\]]+/);\n    if (m) { imageUrl = m[0]; break; }\n  }\n}\n\n// Stratégie B (fallback): chercher l'URL dans le texte de réponse de l'agent\nif (!imageUrl && output) {\n  const dalleRegex = /https?:\\/\\/oaidalleapiprodscus\\.blob\\.core\\.windows\\.net\\/[^\\s<>\"'\\)\\]]+/i;\n  const imgRegex = /https?:\\/\\/[^\\s<>\"'\\)\\]]+\\.(?:png|jpg|jpeg|gif|webp)(?:[?#][^\\s<>\"'\\)\\]]*)?/i;\n  const dm = output.match(dalleRegex);\n  if (dm) imageUrl = dm[0];\n  else {\n    const im = output.match(imgRegex);\n    if (im) imageUrl = im[0];\n  }\n}\n\n// --- 3) Construire la légende (texte sans les URLs) ---\nlet caption = output\n  .replace(/https?:\\/\\/oaidalleapiprodscus\\.blob\\.core\\.windows\\.net\\/[^\\s<>\"'\\)\\]]+/gi, '')\n  .replace(/https?:\\/\\/[^\\s<>\"'\\)\\]]+\\.(?:png|jpg|jpeg|gif|webp)(?:[?#][^\\s<>\"'\\)\\]]*)?/gi, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nif (!caption || caption.length < 2) {\n  caption = imageUrl ? '🎨 Image générée' : '';\n}\nif (caption.length > 1024) {\n  caption = caption.substring(0, 1021) + '...';\n}\n\n// --- 4) Texte final pour sendMessage (jamais vide) ---\nlet finalText = output;\nif (!finalText || finalText.length === 0) {\n  finalText = 'Désolé, je n\\'ai pas pu générer de réponse.';\n}\nif (finalText.length > 4096) {\n  finalText = finalText.substring(0, 4093) + '...';\n}\n\nreturn [{\n  json: {\n    output: finalText,\n    imageUrl: imageUrl,\n    hasImage: Boolean(imageUrl && chatId),\n    caption: caption,\n    chatId: chatId\n  }\n}];"
       },
       "id": "detect-image-001",
       "name": "Detecter Image",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1200, 288]
+      "position": [1200, 300]
     },
     {
       "parameters": {
@@ -387,7 +385,8 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 1
           },
           "conditions": [
             {
@@ -408,7 +407,7 @@
       "name": "If1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1420, 288]
+      "position": [1420, 300]
     },
     {
       "parameters": {
@@ -426,7 +425,7 @@
       "name": "Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1640, 192],
+      "position": [1640, 200],
       "credentials": {
         "telegramApi": {
           "id": "",
@@ -442,14 +441,15 @@
         "text": "={{ $json.output }}",
         "additionalFields": {
           "parse_mode": "Markdown",
-          "disable_web_page_preview": true
+          "disable_web_page_preview": true,
+          "appendAttribution": false
         }
       },
       "id": "send-text-001",
       "name": "Telegram1",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1640, 384],
+      "position": [1640, 400],
       "credentials": {
         "telegramApi": {
           "id": "",
@@ -554,7 +554,7 @@
         ]
       ]
     },
-    "Gmail Tool": {
+    "Envoyer_Email": {
       "ai_tool": [
         [
           {
@@ -565,7 +565,7 @@
         ]
       ]
     },
-    "Gmail Tool1": {
+    "Lire_Emails": {
       "ai_tool": [
         [
           {
@@ -576,7 +576,7 @@
         ]
       ]
     },
-    "Google Calendar Tool": {
+    "Voir_Agenda": {
       "ai_tool": [
         [
           {
@@ -587,7 +587,7 @@
         ]
       ]
     },
-    "Google Calendar Tool1": {
+    "Creer_Evenement": {
       "ai_tool": [
         [
           {
@@ -598,7 +598,7 @@
         ]
       ]
     },
-    "Postgres Tool": {
+    "Chercher_Contact": {
       "ai_tool": [
         [
           {
@@ -609,7 +609,7 @@
         ]
       ]
     },
-    "Http Request Tool": {
+    "Actualites_News": {
       "ai_tool": [
         [
           {
@@ -620,7 +620,7 @@
         ]
       ]
     },
-    "Http Request Tool1": {
+    "Generer_Image": {
       "ai_tool": [
         [
           {
@@ -631,7 +631,7 @@
         ]
       ]
     },
-    "SerpApi": {
+    "Recherche_Web": {
       "ai_tool": [
         [
           {
